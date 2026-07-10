@@ -1,0 +1,83 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-slate-100 text-slate-800;
+}
+
+/* Estrella del login: brilla/pulsa suavemente cada 5 segundos. */
+@keyframes star-shine {
+  0%   { transform: scale(1)    rotate(0deg);   filter: drop-shadow(0 0 0 rgba(99,102,241,0)); }
+  4%   { transform: scale(1.25) rotate(-8deg);  filter: drop-shadow(0 0 10px rgba(99,102,241,.6)); }
+  8%   { transform: scale(1.15) rotate(8deg);   filter: drop-shadow(0 0 8px rgba(99,102,241,.5)); }
+  12%  { transform: scale(1)    rotate(0deg);   filter: drop-shadow(0 0 0 rgba(99,102,241,0)); }
+  100% { transform: scale(1)    rotate(0deg);   filter: drop-shadow(0 0 0 rgba(99,102,241,0)); }
+}
+
+.star-anim {
+  display: inline-block;
+  transform-origin: 50% 50%;
+  animation: star-shine 5s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .star-anim { animation: none; }
+}
+
+/* Aviso flotante (toast) al confirmar una carga de puntos. */
+@keyframes toast-pop {
+  0%   { opacity: 0; transform: translateY(20px) scale(0.95); }
+  10%  { opacity: 1; transform: translateY(0)    scale(1); }
+  85%  { opacity: 1; transform: translateY(0)    scale(1); }
+  100% { opacity: 0; transform: translateY(10px) scale(0.98); }
+}
+
+.toast-pop {
+  animation: toast-pop 4s ease-in-out forwards;
+}
+
+/* Tablas responsive: hasta 1023px cada fila se transforma en una tarjeta.
+   Usa el atributo data-label de cada <td> como etiqueta. */
+@media (max-width: 1023px) {
+  table.responsive-table thead {
+    display: none;
+  }
+  table.responsive-table,
+  table.responsive-table tbody,
+  table.responsive-table tr,
+  table.responsive-table td {
+    display: block;
+    width: 100%;
+  }
+  table.responsive-table tr {
+    margin-bottom: 0.75rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.6rem;
+    padding: 0.4rem 0.8rem;
+    background: #fff;
+  }
+  table.responsive-table td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    text-align: right;
+    white-space: normal;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    min-width: 0;
+    border: 0 !important;
+    padding: 0.35rem 0;
+  }
+  table.responsive-table td::before {
+    content: attr(data-label);
+    font-weight: 600;
+    color: #64748b;
+    text-align: left;
+    flex: none;
+  }
+  table.responsive-table td:empty {
+    display: none;
+  }
+}
