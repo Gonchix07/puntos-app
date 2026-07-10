@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../supabaseClient'
-import { Button, Input, Card, money, puntos, formatTarjeta } from '../components/ui'
+import { Button, Input, Select, Card, money, puntos, formatTarjeta } from '../components/ui'
 import ClienteCombo from '../components/ClienteCombo'
 
 // "$ 1.234.567" mientras se escribe
@@ -12,10 +12,29 @@ function formatPesos(digitos) {
   return '$ ' + new Intl.NumberFormat('es-AR').format(Number(digitos))
 }
 
+// Factura AFIP: punto de venta (4) - número (8) -> "0001-00001234".
+// Mientras se escribe inserta el guion tras los primeros 4 dígitos.
+function formatFactura(v) {
+  const d = String(v).replace(/\D/g, '').slice(0, 12)
+  if (d.length <= 4) return d
+  return d.slice(0, 4) + '-' + d.slice(4)
+}
+// Al salir del campo completa con ceros a la izquierda cada bloque.
+function padFactura(v) {
+  const d = String(v).replace(/\D/g, '')
+  if (!d) return ''
+  const pv = d.slice(0, 4).padStart(4, '0')
+  const nro = d.slice(4).padStart(8, '0').slice(0, 8)
+  return `${pv}-${nro}`
+}
+
 export default function CargarPuntos() {
   const [clientes, setClientes] = useState([])
   const [pxp, setPxp] = useState(1000)
+  const [maxFactura, setMaxFactura] = useState(9999999)
   const [clienteId, setClienteId] = useState('')
+  const [comercios, setComercios] = useState([])
+  const [comercioId, setComercioId] = useState('')
   const [facturaNumero, setFacturaNumero] = useState('')
   const [pesosDigitos, setPesosDigitos] = useState('')
   const [enviando, setEnviando] = useState(false)
@@ -23,19 +42,22 @@ export default function CargarPuntos() {
   const [toast, setToast] = useState(null)
 
   async function cargarDatos() {
-    const [{ data: cData }, { data: cfg }] = await Promise.all([
+    const [{ data: cData }, { data: coData }, { data: cfg }] = await Promise.all([
       supabase
         .from('clientes')
         .select('id, nombre, dni, tarjetas(numero, puntos, activa)')
         .order('nombre'),
-      supabase.from('config').select('pesos_por_punto').eq('id', 1).single(),
+      supabase.from('comercios').select('id, nombre').eq('activo', true).order('nombre'),
+      supabase.from('config').select('pesos_por_punto, max_factura_pesos').eq('id', 1).single(),
     ])
     const mapped = (cData || []).map((c) => {
       const t = Array.isArray(c.tarjetas) ? c.tarjetas[0] : c.tarjetas
       return { ...c, tarjeta_numero: t?.numero, tarjeta_puntos: t?.puntos, tarjeta_activa: t?.activa }
     })
     setClientes(mapped)
+    setComercios(coData || [])
     if (cfg?.pesos_por_punto) setPxp(Number(cfg.pesos_por_punto))
+    if (cfg?.max_factura_pesos) setMaxFactura(Number(cfg.max_factura_pesos))
   }
 
   useEffect(() => {
@@ -57,8 +79,19 @@ export default function CargarPuntos() {
       setMsg({ tipo: 'error', texto: 'El cliente no tiene una tarjeta emitida.' })
       return
     }
+    if (!comercioId) {
+      setMsg({ tipo: 'error', texto: 'Elegí el comercio de la factura.' })
+      return
+    }
     if (pesos <= 0) {
       setMsg({ tipo: 'error', texto: 'Ingresá el importe de la factura.' })
+      return
+    }
+    if (maxFactura && pesos > maxFactura) {
+      setMsg({
+        tipo: 'error',
+        texto: `El importe supera el máximo permitido por factura (${money(maxFactura)}).`,
+      })
       return
     }
     setEnviando(true)
@@ -67,6 +100,7 @@ export default function CargarPuntos() {
       p_factura_pesos: pesos,
       p_factura_numero: facturaNumero.trim() || null,
       p_origen: 'manual',
+      p_comercio_id: comercioId,
     })
     setEnviando(false)
     if (error) {
@@ -83,6 +117,7 @@ export default function CargarPuntos() {
     setFacturaNumero('')
     setPesosDigitos('')
     setClienteId('')
+    setComercioId('')
     cargarDatos()
   }
 
@@ -127,11 +162,28 @@ export default function CargarPuntos() {
             </div>
           )}
 
+          <Select label="Comercio de la factura" value={comercioId} onChange={(e) => setComercioId(e.target.value)}>
+            <option value="">— Elegí un comercio —</option>
+            {comercios.map((co) => (
+              <option key={co.id} value={co.id}>
+                {co.nombre}
+              </option>
+            ))}
+          </Select>
+          {comercios.length === 0 && (
+            <p className="text-xs text-amber-600">
+              No hay comercios activos. Creá uno en la solapa <b>Comercios</b> antes de cargar puntos.
+            </p>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Input
               label="N° de factura (opcional)"
               value={facturaNumero}
-              onChange={(e) => setFacturaNumero(e.target.value)}
+              onChange={(e) => setFacturaNumero(formatFactura(e.target.value))}
+              onBlur={(e) => setFacturaNumero(padFactura(e.target.value))}
+              inputMode="numeric"
+              maxLength={13}
               placeholder="0001-00001234"
             />
             <Input

@@ -10,7 +10,9 @@ export default function Layout() {
     { to: '/', label: 'Inicio', end: true },
     { to: '/clientes', label: 'Clientes' },
     { to: '/cargar', label: 'Cargar puntos' },
+    { to: '/premios', label: 'Premios' },
     { to: '/auditoria', label: 'Auditoría' },
+    { to: '/comercios', label: 'Comercios' },
     { to: '/configuracion', label: 'Configuración' },
     { to: '/usuarios', label: 'Usuarios' },
   ]
@@ -19,6 +21,7 @@ export default function Layout() {
     { to: '/', label: 'Inicio', end: true },
     { to: '/clientes', label: 'Clientes' },
     { to: '/cargar', label: 'Cargar puntos' },
+    { to: '/premios', label: 'Premios' },
     { to: '/auditoria', label: 'Auditoría' },
   ]
   const links = isAdmin ? adminLinks : operadorLinks
@@ -31,10 +34,10 @@ export default function Layout() {
   return (
     <div className="min-h-screen flex flex-col">
       <header className="bg-indigo-700 text-white">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex flex-nowrap items-center justify-between gap-3">
+        <div className="w-full px-6 py-3 flex flex-nowrap items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <span className="font-bold text-lg whitespace-nowrap shrink-0">⭐ Puntos</span>
-            <nav className="hidden sm:flex gap-1 overflow-x-auto min-w-0">
+            <nav className="hidden sm:flex flex-wrap gap-1 min-w-0">
               {links.map((l) => (
                 <NavLink
                   key={l.to}
@@ -85,7 +88,7 @@ export default function Layout() {
         </nav>
       </header>
 
-      <main className="flex-1 max-w-6xl mx-auto w-full px-4 py-6">
+      <main className="flex-1 w-full px-6 py-6">
         <Outlet />
       </main>
     </div>

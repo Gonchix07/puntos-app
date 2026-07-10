@@ -6,6 +6,7 @@
 //   dni             string  DNI del cliente (alternativa a numero)
 //   factura_pesos*  number  importe de la factura (> 0)
 //   factura_numero  string  n° de factura (opcional)
+//   comercio        string  nombre del comercio de la factura (opcional); también acepta comercio_id (UUID)
 //
 // Respuesta 201: { numero_tarjeta, cliente, factura_pesos, pesos_por_punto,
 //                  puntos_otorgados, puntos_totales }
@@ -40,10 +41,22 @@ export default async function handler(req, res) {
   if (!ctx) return res.status(403).json({ error: 'No autorizado (se requiere un usuario administrador).' })
   const { admin, callerEmail } = ctx
 
-  const { numero, dni, factura_pesos, factura_numero } = req.body || {}
+  const { numero, dni, factura_pesos, factura_numero, comercio, comercio_id } = req.body || {}
   const pesos = Number(factura_pesos)
   if (!pesos || pesos <= 0) {
     return res.status(400).json({ error: 'factura_pesos debe ser un número mayor a cero.' })
+  }
+
+  // Resolver el comercio (por id o por nombre). Opcional.
+  let comercioId = comercio_id || null
+  if (!comercioId && comercio?.trim()) {
+    const { data: com } = await admin
+      .from('comercios')
+      .select('id')
+      .ilike('nombre', comercio.trim())
+      .single()
+    if (!com) return res.status(404).json({ error: `Comercio no encontrado: "${comercio}".` })
+    comercioId = com.id
   }
 
   // Resolver el número de tarjeta
@@ -65,6 +78,7 @@ export default async function handler(req, res) {
     p_factura_numero: factura_numero ? String(factura_numero).trim() : null,
     p_origen: 'api',
     p_usuario_email: callerEmail,
+    p_comercio_id: comercioId,
   })
 
   if (error) {

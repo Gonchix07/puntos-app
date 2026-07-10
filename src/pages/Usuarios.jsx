@@ -36,6 +36,14 @@ export default function Usuarios() {
       },
       body: JSON.stringify(body),
     })
+    // Si no vuelve JSON, la función serverless no está corriendo (típico con
+    // `npm run dev`, que no ejecuta las funciones /api). Damos un mensaje claro.
+    const ct = res.headers.get('content-type') || ''
+    if (!ct.includes('application/json')) {
+      throw new Error(
+        'La función /api/admin-users no está disponible. El ABM de usuarios necesita el backend serverless: usá "vercel dev" localmente o el sitio deployado en Vercel (con SUPABASE_SERVICE_ROLE_KEY configurada).'
+      )
+    }
     const json = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error(json.error || 'Error en la operación')
     return json

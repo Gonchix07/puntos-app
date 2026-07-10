@@ -13,16 +13,26 @@ function formatPesos(d) {
 export default function Configuracion() {
   const [digitos, setDigitos] = useState('1000')
   const [guardado, setGuardado] = useState('1000')
+  const [maxDigitos, setMaxDigitos] = useState('9999999')
+  const [maxGuardado, setMaxGuardado] = useState('9999999')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [savingMax, setSavingMax] = useState(false)
   const [msg, setMsg] = useState(null)
 
   useEffect(() => {
     ;(async () => {
-      const { data } = await supabase.from('config').select('pesos_por_punto').eq('id', 1).single()
+      const { data } = await supabase
+        .from('config')
+        .select('pesos_por_punto, max_factura_pesos')
+        .eq('id', 1)
+        .single()
       const v = String(Math.round(Number(data?.pesos_por_punto || 1000)))
+      const m = String(Math.round(Number(data?.max_factura_pesos || 9999999)))
       setDigitos(v)
       setGuardado(v)
+      setMaxDigitos(m)
+      setMaxGuardado(m)
       setLoading(false)
     })()
   }, [])
@@ -47,6 +57,28 @@ export default function Configuracion() {
     }
     setGuardado(digitos)
     setMsg({ tipo: 'ok', texto: 'Configuración guardada.' })
+  }
+
+  async function guardarMax(e) {
+    e.preventDefault()
+    setMsg(null)
+    const valor = Number(maxDigitos)
+    if (!valor || valor <= 0) {
+      setMsg({ tipo: 'error', texto: 'El tope debe ser mayor a cero.' })
+      return
+    }
+    setSavingMax(true)
+    const { error } = await supabase
+      .from('config')
+      .update({ max_factura_pesos: valor, updated_at: new Date().toISOString() })
+      .eq('id', 1)
+    setSavingMax(false)
+    if (error) {
+      setMsg({ tipo: 'error', texto: error.message })
+      return
+    }
+    setMaxGuardado(maxDigitos)
+    setMsg({ tipo: 'ok', texto: 'Tope de importe guardado.' })
   }
 
   const valor = Number(digitos || 0)
@@ -90,6 +122,32 @@ export default function Configuracion() {
             </div>
             <Button type="submit" disabled={saving || digitos === guardado}>
               {saving ? 'Guardando…' : 'Guardar'}
+            </Button>
+          </form>
+        )}
+      </Card>
+
+      <Card>
+        <h2 className="font-semibold text-slate-700 mb-1">Tope de importe por factura</h2>
+        <p className="text-sm text-slate-500 mb-4">
+          Importe máximo permitido en una carga de puntos. Las cargas (manuales o por API) que superen
+          este valor se rechazan.
+        </p>
+        {loading ? (
+          <p className="text-slate-500">Cargando…</p>
+        ) : (
+          <form onSubmit={guardarMax} className="flex flex-wrap items-end gap-3">
+            <label className="block">
+              <span className="block text-sm font-medium text-slate-600 mb-1">Importe máximo</span>
+              <input
+                value={formatPesos(maxDigitos)}
+                onChange={(e) => setMaxDigitos(soloDigitos(e.target.value))}
+                inputMode="numeric"
+                className="px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 w-56 text-lg font-semibold"
+              />
+            </label>
+            <Button type="submit" disabled={savingMax || maxDigitos === maxGuardado}>
+              {savingMax ? 'Guardando…' : 'Guardar'}
             </Button>
           </form>
         )}

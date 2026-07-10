@@ -42,6 +42,9 @@ export default async function handler(req, res) {
   const { nombre, dni, email, telefono } = req.body || {}
   if (!nombre?.trim()) return res.status(400).json({ error: 'El campo nombre es obligatorio.' })
   if (!dni?.trim()) return res.status(400).json({ error: 'El campo dni es obligatorio.' })
+  if (!/^[1-9][0-9]{6,7}$/.test(dni.trim())) {
+    return res.status(400).json({ error: 'El dni debe ser un número entre 1.000.000 y 99.999.999.' })
+  }
   if (email?.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
     return res.status(400).json({ error: 'El formato del email no es válido.' })
   }

@@ -5,7 +5,9 @@ import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Clientes from './pages/Clientes'
 import CargarPuntos from './pages/CargarPuntos'
+import Premios from './pages/Premios'
 import Auditoria from './pages/Auditoria'
+import Comercios from './pages/Comercios'
 import Configuracion from './pages/Configuracion'
 import Usuarios from './pages/Usuarios'
 
@@ -25,6 +27,7 @@ export default function App() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/clientes" element={<Clientes />} />
         <Route path="/cargar" element={<CargarPuntos />} />
+        <Route path="/premios" element={<Premios />} />
         <Route path="/auditoria" element={<Auditoria />} />
       </Route>
 
@@ -36,6 +39,7 @@ export default function App() {
           </ProtectedRoute>
         }
       >
+        <Route path="/comercios" element={<Comercios />} />
         <Route path="/configuracion" element={<Configuracion />} />
         <Route path="/usuarios" element={<Usuarios />} />
       </Route>
