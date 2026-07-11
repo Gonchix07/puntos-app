@@ -6,7 +6,7 @@
 //   dni             string  DNI del cliente (alternativa a numero)
 //   factura_pesos*  number  importe de la factura (> 0)
 //   factura_numero  string  n° de factura (opcional)
-//   comercio        string  nombre del comercio de la factura (opcional); también acepta comercio_id (UUID)
+//   comercio*       string  nombre del comercio de la factura (obligatorio); también acepta comercio_id (UUID)
 //
 // Respuesta 201: { numero_tarjeta, cliente, factura_pesos, pesos_por_punto,
 //                  puntos_otorgados, puntos_totales }
@@ -57,6 +57,9 @@ export default async function handler(req, res) {
       .single()
     if (!com) return res.status(404).json({ error: `Comercio no encontrado: "${comercio}".` })
     comercioId = com.id
+  }
+  if (!comercioId) {
+    return res.status(400).json({ error: 'Indicá el comercio de la factura (comercio o comercio_id).' })
   }
 
   // Resolver el número de tarjeta

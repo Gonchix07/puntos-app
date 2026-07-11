@@ -58,8 +58,8 @@ export default function Auditoria() {
       cliente_id: k.cliente_id,
       cliente_nombre: k.cliente_nombre,
       numero_tarjeta: k.numero_tarjeta,
-      comercio_id: null,
-      comercio_nombre: null,
+      comercio_id: k.comercio_id || null,
+      comercio_nombre: k.comercio_nombre || (k.comercio_id ? null : 'General'),
       detalle: k.premio_titulo ? `Premio: ${k.premio_titulo}` : 'Canje de premio',
       importe: null,
       puntos: -Number(k.puntos || 0), // negativo (gastados)

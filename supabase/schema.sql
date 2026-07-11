@@ -173,6 +173,12 @@ begin
   if p_factura_pesos is null or p_factura_pesos <= 0 then
     raise exception 'El importe de la factura debe ser mayor a cero';
   end if;
+  if p_comercio_id is null then
+    raise exception 'Debe indicarse el comercio de la factura';
+  end if;
+  if not exists (select 1 from public.comercios where id = p_comercio_id) then
+    raise exception 'Comercio no encontrado';
+  end if;
 
   -- Número de factura normalizado (vacío -> null) y validación de unicidad
   v_factura := nullif(trim(coalesce(p_factura_numero, '')), '');
@@ -353,6 +359,7 @@ create table if not exists public.premios (
   foto_url text,
   puntos_necesarios numeric(14,2) not null check (puntos_necesarios > 0),
   stock integer not null default 0 check (stock >= 0),
+  comercio_id uuid references public.comercios(id) on delete set null,  -- null = general (para todos)
   activo boolean not null default true,
   created_at timestamptz not null default now()
 );
@@ -366,11 +373,49 @@ create table if not exists public.canjes (
   tarjeta_id uuid references public.tarjetas(id) on delete set null,
   numero_tarjeta text,
   puntos numeric(14,2) not null,
+  comercio_id uuid references public.comercios(id) on delete set null,   -- comercio del premio (null = general)
+  comercio_nombre text,
   usuario_email text,
   created_at timestamptz not null default now()
 );
 create index if not exists idx_canjes_cliente on public.canjes(cliente_id);
 create index if not exists idx_canjes_fecha on public.canjes(created_at);
+
+-- Detalle del canje: de qué comercio(s) se descontaron los puntos
+create table if not exists public.canje_detalle (
+  id uuid primary key default gen_random_uuid(),
+  canje_id uuid not null references public.canjes(id) on delete cascade,
+  comercio_id uuid references public.comercios(id) on delete set null,
+  puntos numeric(14,2) not null check (puntos > 0)
+);
+create index if not exists idx_canje_detalle_canje on public.canje_detalle(canje_id);
+create index if not exists idx_canje_detalle_comercio on public.canje_detalle(comercio_id);
+
+-- Vista: saldo neto por (cliente, comercio) = cargas(+) − detalle de canjes(−)
+create or replace view public.saldos_por_comercio as
+select m.cliente_id, m.comercio_id, sum(m.puntos)::numeric as puntos
+from (
+  select cliente_id, comercio_id, puntos from public.cargas where comercio_id is not null
+  union all
+  select k.cliente_id, d.comercio_id, -d.puntos
+  from public.canje_detalle d
+  join public.canjes k on k.id = d.canje_id
+) m
+group by m.cliente_id, m.comercio_id;
+
+-- Saldos por comercio de un cliente (para el front)
+create or replace function public.saldos_cliente(p_cliente_id uuid)
+returns table(comercio_id uuid, comercio_nombre text, puntos numeric)
+language sql
+security definer set search_path = public
+as $$
+  select s.comercio_id, co.nombre, s.puntos
+  from public.saldos_por_comercio s
+  join public.comercios co on co.id = s.comercio_id
+  where s.cliente_id = p_cliente_id
+  order by co.nombre;
+$$;
+grant execute on function public.saldos_cliente(uuid) to authenticated;
 
 create or replace function public.canjear_premio(
   p_cliente_id uuid,
@@ -387,50 +432,83 @@ declare
   v_email text;
   v_nombre text;
   v_canje public.canjes%rowtype;
+  v_costo numeric;
+  v_saldo numeric;
+  v_restante numeric;
+  v_take numeric;
+  v_rec record;
+  v_com_nombre text;
 begin
+  -- Serializa cargas/canjes del cliente
   select * into v_card from public.tarjetas where cliente_id = p_cliente_id for update;
-  if not found then
-    raise exception 'El cliente no tiene una tarjeta emitida';
-  end if;
-  if v_card.activa = false then
-    raise exception 'La tarjeta del cliente está inactiva';
-  end if;
+  if not found then raise exception 'El cliente no tiene una tarjeta emitida'; end if;
+  if v_card.activa = false then raise exception 'La tarjeta del cliente está inactiva'; end if;
 
   select * into v_premio from public.premios where id = p_premio_id for update;
-  if not found then
-    raise exception 'Premio no encontrado';
-  end if;
-  if v_premio.activo = false then
-    raise exception 'El premio no está disponible';
-  end if;
-  if v_premio.stock <= 0 then
-    raise exception 'No hay stock disponible del premio';
-  end if;
-  if v_card.puntos < v_premio.puntos_necesarios then
-    raise exception 'Puntos insuficientes: la tarjeta tiene % y el premio requiere %',
-      v_card.puntos, v_premio.puntos_necesarios;
-  end if;
+  if not found then raise exception 'Premio no encontrado'; end if;
+  if v_premio.activo = false then raise exception 'El premio no está disponible'; end if;
+  if v_premio.stock <= 0 then raise exception 'No hay stock disponible del premio'; end if;
 
-  update public.tarjetas set puntos = puntos - v_premio.puntos_necesarios where id = v_card.id;
-  update public.premios set stock = stock - 1 where id = v_premio.id;
-
-  v_email := coalesce(p_usuario_email, (select email from public.profiles where id = auth.uid()));
+  v_costo := v_premio.puntos_necesarios;
   select nombre into v_nombre from public.clientes where id = p_cliente_id;
+  v_email := coalesce(p_usuario_email, (select email from public.profiles where id = auth.uid()));
+
+  if v_premio.comercio_id is not null then
+    -- Premio de comercio: solo el saldo de ese comercio
+    select coalesce(sum(puntos), 0) into v_saldo from public.saldos_por_comercio
+      where cliente_id = p_cliente_id and comercio_id = v_premio.comercio_id;
+    if v_saldo < v_costo then
+      raise exception 'Puntos insuficientes en el comercio: disponibles %, se requieren %', v_saldo, v_costo;
+    end if;
+    select nombre into v_com_nombre from public.comercios where id = v_premio.comercio_id;
+  else
+    -- Premio general: total acumulado
+    select coalesce(sum(puntos), 0) into v_saldo from public.saldos_por_comercio
+      where cliente_id = p_cliente_id;
+    if v_saldo < v_costo then
+      raise exception 'Puntos insuficientes: disponibles %, se requieren %', v_saldo, v_costo;
+    end if;
+  end if;
 
   insert into public.canjes (
-    premio_id, premio_titulo, cliente_id, cliente_nombre, tarjeta_id, numero_tarjeta, puntos, usuario_email
+    premio_id, premio_titulo, cliente_id, cliente_nombre, tarjeta_id, numero_tarjeta,
+    puntos, comercio_id, comercio_nombre, usuario_email
   ) values (
     v_premio.id, v_premio.titulo, p_cliente_id, v_nombre, v_card.id, v_card.numero,
-    v_premio.puntos_necesarios, v_email
+    v_costo, v_premio.comercio_id, v_com_nombre, v_email
   )
   returning * into v_canje;
+
+  if v_premio.comercio_id is not null then
+    insert into public.canje_detalle (canje_id, comercio_id, puntos)
+      values (v_canje.id, v_premio.comercio_id, v_costo);
+  else
+    -- Reparte el costo entre comercios, del que más saldo tiene primero
+    v_restante := v_costo;
+    for v_rec in
+      select comercio_id, puntos from public.saldos_por_comercio
+      where cliente_id = p_cliente_id and puntos > 0
+      order by puntos desc
+    loop
+      exit when v_restante <= 0;
+      v_take := least(v_rec.puntos, v_restante);
+      insert into public.canje_detalle (canje_id, comercio_id, puntos)
+        values (v_canje.id, v_rec.comercio_id, v_take);
+      v_restante := v_restante - v_take;
+    end loop;
+  end if;
+
+  update public.tarjetas set puntos = puntos - v_costo where id = v_card.id;
+  update public.premios set stock = stock - 1 where id = v_premio.id;
 
   return json_build_object(
     'canje_id', v_canje.id,
     'premio', v_premio.titulo,
     'cliente', v_nombre,
-    'puntos_usados', v_premio.puntos_necesarios,
-    'puntos_restantes', v_card.puntos - v_premio.puntos_necesarios,
+    'general', v_premio.comercio_id is null,
+    'comercio', v_com_nombre,
+    'puntos_usados', v_costo,
+    'puntos_restantes', v_card.puntos - v_costo,
     'stock_restante', v_premio.stock - 1
   );
 end;
@@ -440,6 +518,11 @@ grant execute on function public.canjear_premio(uuid, uuid, text) to authenticat
 
 alter table public.premios enable row level security;
 alter table public.canjes  enable row level security;
+alter table public.canje_detalle enable row level security;
+
+drop policy if exists "canje_detalle select" on public.canje_detalle;
+create policy "canje_detalle select" on public.canje_detalle
+  for select to authenticated using (true);
 
 drop policy if exists "premios select" on public.premios;
 create policy "premios select" on public.premios

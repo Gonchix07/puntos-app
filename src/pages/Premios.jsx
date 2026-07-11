@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../contexts/AuthContext'
-import { Button, Input, Card, Badge, puntos, formatTarjeta } from '../components/ui'
+import { Button, Input, Select, Card, Badge, puntos, formatTarjeta } from '../components/ui'
 import ClienteCombo from '../components/ClienteCombo'
 
-const VACIO = { titulo: '', descripcion: '', foto_url: '', puntos_necesarios: '', stock: '', activo: true }
+const VACIO = { titulo: '', descripcion: '', foto_url: '', puntos_necesarios: '', stock: '', comercio_id: '', activo: true }
 
 // Solo dígitos + separador de miles es-AR ("80000" -> "80.000") mientras se escribe
 function soloDigitos(v) {
@@ -18,6 +18,7 @@ export default function Premios() {
   const { isAdmin, profile } = useAuth()
   const [premios, setPremios] = useState([])
   const [clientes, setClientes] = useState([])
+  const [comercios, setComercios] = useState([])
   const [loading, setLoading] = useState(true)
   const [msg, setMsg] = useState(null)
   const [toast, setToast] = useState(null)
@@ -34,23 +35,29 @@ export default function Premios() {
   const [canjeClienteId, setCanjeClienteId] = useState('')
   const [canjeando, setCanjeando] = useState(false)
   const [canjeMsg, setCanjeMsg] = useState(null)
+  const [saldos, setSaldos] = useState([]) // [{comercio_id, comercio_nombre, puntos}]
+  const [saldosLoading, setSaldosLoading] = useState(false)
 
   async function cargar() {
     setLoading(true)
-    const [{ data: pData }, { data: cData }] = await Promise.all([
-      supabase.from('premios').select('*').order('created_at', { ascending: false }),
+    const [{ data: pData }, { data: cData }, { data: coData }] = await Promise.all([
+      supabase.from('premios').select('*, comercios(nombre)').order('created_at', { ascending: false }),
       supabase
         .from('clientes')
         .select('id, nombre, dni, tarjetas(numero, puntos, activa)')
         .order('nombre'),
+      supabase.from('comercios').select('id, nombre').eq('activo', true).order('nombre'),
     ])
-    setPremios(pData || [])
+    setPremios(
+      (pData || []).map((p) => ({ ...p, comercio_nombre: p.comercios?.nombre || null }))
+    )
     setClientes(
       (cData || []).map((c) => {
         const t = Array.isArray(c.tarjetas) ? c.tarjetas[0] : c.tarjetas
         return { ...c, tarjeta_numero: t?.numero, tarjeta_puntos: Number(t?.puntos || 0), tarjeta_activa: t?.activa }
       })
     )
+    setComercios(coData || [])
     setLoading(false)
   }
 
@@ -67,6 +74,7 @@ export default function Premios() {
       foto_url: p.foto_url || '',
       puntos_necesarios: String(Math.round(Number(p.puntos_necesarios || 0))),
       stock: String(p.stock),
+      comercio_id: p.comercio_id || '',
       activo: p.activo,
     })
     setMsg(null)
@@ -128,6 +136,7 @@ export default function Premios() {
       foto_url: form.foto_url.trim() || null,
       puntos_necesarios: pts,
       stock: stk,
+      comercio_id: form.comercio_id || null,
       activo: form.activo,
     }
     const { error } = editId
@@ -159,16 +168,39 @@ export default function Premios() {
     setCanjePremio(premio)
     setCanjeClienteId('')
     setCanjeMsg(null)
+    setSaldos([])
   }
   function cerrarCanje() {
     setCanjePremio(null)
     setCanjeClienteId('')
     setCanjeMsg(null)
+    setSaldos([])
+  }
+
+  async function elegirClienteCanje(id) {
+    setCanjeClienteId(id)
+    setCanjeMsg(null)
+    setSaldos([])
+    if (!id) return
+    setSaldosLoading(true)
+    const { data, error } = await supabase.rpc('saldos_cliente', { p_cliente_id: id })
+    setSaldosLoading(false)
+    if (error) {
+      setCanjeMsg(error.message)
+      return
+    }
+    setSaldos((data || []).map((s) => ({ ...s, puntos: Number(s.puntos || 0) })))
   }
 
   const clienteCanje = clientes.find((c) => c.id === canjeClienteId) || null
-  const puntosSuficientes =
-    clienteCanje && canjePremio ? clienteCanje.tarjeta_puntos >= Number(canjePremio.puntos_necesarios) : false
+  const esGeneral = canjePremio ? !canjePremio.comercio_id : true
+  const saldoTotal = saldos.reduce((a, s) => a + Number(s.puntos || 0), 0)
+  const saldoComercio = canjePremio?.comercio_id
+    ? Number(saldos.find((s) => s.comercio_id === canjePremio.comercio_id)?.puntos || 0)
+    : 0
+  const disponible = esGeneral ? saldoTotal : saldoComercio
+  const costo = Number(canjePremio?.puntos_necesarios || 0)
+  const puntosSuficientes = !!clienteCanje && disponible >= costo
 
   async function confirmarCanje() {
     setCanjeMsg(null)
@@ -257,6 +289,22 @@ export default function Premios() {
                   required
                 />
               </div>
+              <Select
+                label="Disponible en"
+                value={form.comercio_id}
+                onChange={(e) => setForm((f) => ({ ...f, comercio_id: e.target.value }))}
+              >
+                <option value="">General (todos los comercios)</option>
+                {comercios.map((co) => (
+                  <option key={co.id} value={co.id}>
+                    {co.nombre}
+                  </option>
+                ))}
+              </Select>
+              <p className="text-xs text-slate-400">
+                General: se canjea con el total de puntos. De un comercio: solo con los puntos acumulados en ese
+                comercio.
+              </p>
               <label className="flex items-center gap-2 text-sm text-slate-600">
                 <input
                   type="checkbox"
@@ -352,6 +400,11 @@ export default function Premios() {
                   {p.descripcion && (
                     <p className="text-sm text-white/85 line-clamp-2 drop-shadow-sm">{p.descripcion}</p>
                   )}
+                  <div>
+                    <Badge color={p.comercio_id ? 'indigo' : 'green'}>
+                      {p.comercio_id ? `🏬 ${p.comercio_nombre || 'Comercio'}` : '🌐 General'}
+                    </Badge>
+                  </div>
                   <div className="flex items-center justify-between">
                     <Badge color="amber">⭐ {puntos(p.puntos_necesarios)} pts</Badge>
                     <span
@@ -405,6 +458,13 @@ export default function Premios() {
               <div>
                 <h2 className="font-bold text-lg text-slate-800">Canjear premio</h2>
                 <p className="text-sm text-slate-500">{canjePremio.titulo}</p>
+                <span className="mt-1 inline-block">
+                  <Badge color={canjePremio.comercio_id ? 'indigo' : 'green'}>
+                    {canjePremio.comercio_id
+                      ? `🏬 ${canjePremio.comercio_nombre || 'Comercio'}`
+                      : '🌐 General'}
+                  </Badge>
+                </span>
               </div>
               <Badge color="amber">⭐ {puntos(canjePremio.puntos_necesarios)} pts</Badge>
             </div>
@@ -413,10 +473,7 @@ export default function Premios() {
               label="Cliente que canjea"
               clientes={clientes}
               value={canjeClienteId}
-              onChange={(id) => {
-                setCanjeClienteId(id)
-                setCanjeMsg(null)
-              }}
+              onChange={elegirClienteCanje}
             />
 
             {clienteCanje && (
@@ -429,17 +486,27 @@ export default function Premios() {
                       : '— sin tarjeta —'}
                   </span>
                 </div>
-                <div className="text-slate-500">
-                  Puntos disponibles:{' '}
-                  <b className={puntosSuficientes ? 'text-green-600' : 'text-red-600'}>
-                    ⭐ {puntos(clienteCanje.tarjeta_puntos)}
-                  </b>
-                </div>
-                {!puntosSuficientes && (
-                  <div className="text-xs text-red-600">
-                    Faltan {puntos(Number(canjePremio.puntos_necesarios) - clienteCanje.tarjeta_puntos)} puntos
-                    para este premio.
-                  </div>
+                {saldosLoading ? (
+                  <div className="text-slate-400">Cargando saldos…</div>
+                ) : (
+                  <>
+                    <div className="text-slate-500">
+                      {esGeneral ? 'Puntos disponibles (total):' : `Puntos en ${canjePremio.comercio_nombre || 'el comercio'}:`}{' '}
+                      <b className={puntosSuficientes ? 'text-green-600' : 'text-red-600'}>
+                        ⭐ {puntos(disponible)}
+                      </b>
+                    </div>
+                    {esGeneral && saldos.length > 0 && (
+                      <div className="text-xs text-slate-400">
+                        {saldos.map((s) => `${s.comercio_nombre}: ${puntos(s.puntos)}`).join(' · ')}
+                      </div>
+                    )}
+                    {!puntosSuficientes && (
+                      <div className="text-xs text-red-600">
+                        Faltan {puntos(costo - disponible)} puntos para este premio.
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             )}
