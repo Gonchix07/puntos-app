@@ -14,6 +14,27 @@ function formatMiles(d) {
   return d ? new Intl.NumberFormat('es-AR').format(Number(d)) : ''
 }
 
+// Pill de comercio (con logo) o "General"
+function ComercioPill({ comercioId, nombre, logo }) {
+  if (!comercioId) {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-700">
+        🌐 General
+      </span>
+    )
+  }
+  return (
+    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-700">
+      {logo ? (
+        <img src={logo} alt="" className="h-4 w-4 rounded-sm object-contain bg-white" />
+      ) : (
+        '🏬'
+      )}
+      {nombre || 'Comercio'}
+    </span>
+  )
+}
+
 export default function Premios() {
   const { isAdmin, profile } = useAuth()
   const [premios, setPremios] = useState([])
@@ -41,20 +62,30 @@ export default function Premios() {
   async function cargar() {
     setLoading(true)
     const [{ data: pData }, { data: cData }, { data: coData }] = await Promise.all([
-      supabase.from('premios').select('*, comercios(nombre)').order('created_at', { ascending: false }),
+      supabase.from('premios').select('*, comercios(nombre, logo_url)').order('created_at', { ascending: false }),
       supabase
         .from('clientes')
-        .select('id, nombre, dni, tarjetas(numero, puntos, activa)')
+        .select('id, nombre, dni, tarjetas(numero, puntos, puntos_remanentes, activa)')
         .order('nombre'),
       supabase.from('comercios').select('id, nombre').eq('activo', true).order('nombre'),
     ])
     setPremios(
-      (pData || []).map((p) => ({ ...p, comercio_nombre: p.comercios?.nombre || null }))
+      (pData || []).map((p) => ({
+        ...p,
+        comercio_nombre: p.comercios?.nombre || null,
+        comercio_logo: p.comercios?.logo_url || null,
+      }))
     )
     setClientes(
       (cData || []).map((c) => {
         const t = Array.isArray(c.tarjetas) ? c.tarjetas[0] : c.tarjetas
-        return { ...c, tarjeta_numero: t?.numero, tarjeta_puntos: Number(t?.puntos || 0), tarjeta_activa: t?.activa }
+        return {
+          ...c,
+          tarjeta_numero: t?.numero,
+          tarjeta_puntos: Number(t?.puntos || 0),
+          tarjeta_remanentes: Number(t?.puntos_remanentes || 0),
+          tarjeta_activa: t?.activa,
+        }
       })
     )
     setComercios(coData || [])
@@ -189,16 +220,23 @@ export default function Premios() {
       setCanjeMsg(error.message)
       return
     }
-    setSaldos((data || []).map((s) => ({ ...s, puntos: Number(s.puntos || 0) })))
+    setSaldos(
+      (data || []).map((s) => ({
+        ...s,
+        saldo: Number(s.saldo || 0),
+        pendiente: Number(s.pendiente || 0),
+        remanente: Number(s.remanente || 0),
+      }))
+    )
   }
 
   const clienteCanje = clientes.find((c) => c.id === canjeClienteId) || null
   const esGeneral = canjePremio ? !canjePremio.comercio_id : true
-  const saldoTotal = saldos.reduce((a, s) => a + Number(s.puntos || 0), 0)
-  const saldoComercio = canjePremio?.comercio_id
-    ? Number(saldos.find((s) => s.comercio_id === canjePremio.comercio_id)?.puntos || 0)
+  // Disponible para SOLICITAR = remanentes (acumulados − pendientes)
+  const remanenteComercio = canjePremio?.comercio_id
+    ? Number(saldos.find((s) => s.comercio_id === canjePremio.comercio_id)?.remanente || 0)
     : 0
-  const disponible = esGeneral ? saldoTotal : saldoComercio
+  const disponible = esGeneral ? Number(clienteCanje?.tarjeta_remanentes || 0) : remanenteComercio
   const costo = Number(canjePremio?.puntos_necesarios || 0)
   const puntosSuficientes = !!clienteCanje && disponible >= costo
 
@@ -213,7 +251,7 @@ export default function Premios() {
       return
     }
     setCanjeando(true)
-    const { data, error } = await supabase.rpc('canjear_premio', {
+    const { data, error } = await supabase.rpc('crear_solicitud', {
       p_cliente_id: clienteCanje.id,
       p_premio_id: canjePremio.id,
     })
@@ -225,12 +263,10 @@ export default function Premios() {
     setToast({
       cliente: data.cliente,
       premio: data.premio,
-      usados: data.puntos_usados,
-      restantes: data.puntos_restantes,
+      usados: data.puntos,
     })
     setTimeout(() => setToast(null), 4500)
     cerrarCanje()
-    cargar()
   }
 
   return (
@@ -401,9 +437,7 @@ export default function Premios() {
                     <p className="text-sm text-white/85 line-clamp-2 drop-shadow-sm">{p.descripcion}</p>
                   )}
                   <div>
-                    <Badge color={p.comercio_id ? 'indigo' : 'green'}>
-                      {p.comercio_id ? `🏬 ${p.comercio_nombre || 'Comercio'}` : '🌐 General'}
-                    </Badge>
+                    <ComercioPill comercioId={p.comercio_id} nombre={p.comercio_nombre} logo={p.comercio_logo} />
                   </div>
                   <div className="flex items-center justify-between">
                     <Badge color="amber">⭐ {puntos(p.puntos_necesarios)} pts</Badge>
@@ -417,7 +451,7 @@ export default function Premios() {
                   </div>
                   <div className="flex gap-2">
                     <Button className="flex-1" disabled={sinStock || inactivo} onClick={() => abrirCanje(p)}>
-                      Canjear
+                      Solicitar canje
                     </Button>
                     {isAdmin && (
                       <>
@@ -456,14 +490,14 @@ export default function Premios() {
           >
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h2 className="font-bold text-lg text-slate-800">Canjear premio</h2>
+                <h2 className="font-bold text-lg text-slate-800">Solicitar canje</h2>
                 <p className="text-sm text-slate-500">{canjePremio.titulo}</p>
                 <span className="mt-1 inline-block">
-                  <Badge color={canjePremio.comercio_id ? 'indigo' : 'green'}>
-                    {canjePremio.comercio_id
-                      ? `🏬 ${canjePremio.comercio_nombre || 'Comercio'}`
-                      : '🌐 General'}
-                  </Badge>
+                  <ComercioPill
+                    comercioId={canjePremio.comercio_id}
+                    nombre={canjePremio.comercio_nombre}
+                    logo={canjePremio.comercio_logo}
+                  />
                 </span>
               </div>
               <Badge color="amber">⭐ {puntos(canjePremio.puntos_necesarios)} pts</Badge>
@@ -491,16 +525,22 @@ export default function Premios() {
                 ) : (
                   <>
                     <div className="text-slate-500">
-                      {esGeneral ? 'Puntos disponibles (total):' : `Puntos en ${canjePremio.comercio_nombre || 'el comercio'}:`}{' '}
+                      {esGeneral
+                        ? 'Puntos remanentes (total disponible):'
+                        : `Remanentes en ${canjePremio.comercio_nombre || 'el comercio'}:`}{' '}
                       <b className={puntosSuficientes ? 'text-green-600' : 'text-red-600'}>
                         ⭐ {puntos(disponible)}
                       </b>
                     </div>
                     {esGeneral && saldos.length > 0 && (
                       <div className="text-xs text-slate-400">
-                        {saldos.map((s) => `${s.comercio_nombre}: ${puntos(s.puntos)}`).join(' · ')}
+                        {saldos.map((s) => `${s.comercio_nombre}: ${puntos(s.remanente)}`).join(' · ')}
                       </div>
                     )}
+                    <div className="text-xs text-slate-400">
+                      Los remanentes descuentan los canjes pendientes. Los puntos acumulados no bajan hasta
+                      confirmar el canje.
+                    </div>
                     {!puntosSuficientes && (
                       <div className="text-xs text-red-600">
                         Faltan {puntos(costo - disponible)} puntos para este premio.
@@ -521,7 +561,7 @@ export default function Premios() {
                 onClick={confirmarCanje}
                 disabled={canjeando || !clienteCanje || !puntosSuficientes}
               >
-                {canjeando ? 'Procesando…' : 'Confirmar canje'}
+                {canjeando ? 'Creando…' : 'Solicitar canje'}
               </Button>
             </div>
           </div>
@@ -532,10 +572,10 @@ export default function Premios() {
       {toast && (
         <div className="fixed bottom-6 right-6 z-50">
           <div className="toast-pop bg-green-600 text-white rounded-xl shadow-lg px-5 py-4">
-            <div className="font-semibold">🎉 Canje confirmado</div>
+            <div className="font-semibold">📝 Solicitud creada</div>
             <div className="text-sm opacity-95">
-              {toast.cliente} canjeó <b>{toast.premio}</b> por {puntos(toast.usados)} pts. Le quedan{' '}
-              {puntos(toast.restantes)} pts.
+              {toast.cliente} · <b>{toast.premio}</b> ({puntos(toast.usados)} pts). Queda <b>pendiente</b> en
+              Solicitudes.
             </div>
           </div>
         </div>

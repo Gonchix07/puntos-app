@@ -24,7 +24,7 @@ export default function Auditoria() {
         supabase.from('cargas').select('*').order('created_at', { ascending: false }),
         supabase.from('canjes').select('*').order('created_at', { ascending: false }),
         supabase.from('clientes').select('id, nombre, dni').order('nombre'),
-        supabase.from('comercios').select('id, nombre').order('nombre'),
+        supabase.from('comercios').select('id, nombre, logo_url').order('nombre'),
       ])
       setCargas(cargData || [])
       setCanjes(canjData || [])
@@ -68,6 +68,12 @@ export default function Auditoria() {
     }))
     return [...cs, ...js].sort((a, b) => new Date(b.fecha) - new Date(a.fecha))
   }, [cargas, canjes])
+
+  const logoPorComercio = useMemo(() => {
+    const m = new Map()
+    comercios.forEach((c) => m.set(c.id, c.logo_url))
+    return m
+  }, [comercios])
 
   const filtrados = useMemo(() => {
     return movimientos.filter((m) => {
@@ -249,7 +255,20 @@ export default function Auditoria() {
                       {m.numero_tarjeta || '—'}
                     </td>
                     <td className="py-2 pr-3" data-label="Comercio">
-                      {m.comercio_nombre || '—'}
+                      {m.comercio_nombre ? (
+                        <span className="inline-flex items-center gap-1.5">
+                          {m.comercio_id && logoPorComercio.get(m.comercio_id) && (
+                            <img
+                              src={logoPorComercio.get(m.comercio_id)}
+                              alt=""
+                              className="h-5 w-5 rounded-sm object-contain bg-white border border-slate-200"
+                            />
+                          )}
+                          {m.comercio_nombre}
+                        </span>
+                      ) : (
+                        '—'
+                      )}
                     </td>
                     <td className="py-2 pr-3" data-label="Detalle">
                       {m.detalle}

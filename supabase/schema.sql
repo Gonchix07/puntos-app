@@ -35,7 +35,8 @@ create table if not exists public.tarjetas (
     default lpad(nextval('public.tarjeta_numero_seq')::text, 16, '0')
     check (numero ~ '^[0-9]{16}$'),
   cliente_id uuid not null unique references public.clientes(id) on delete cascade,
-  puntos numeric(14,2) not null default 0 check (puntos >= 0),
+  puntos numeric(14,2) not null default 0 check (puntos >= 0),              -- acumulados (reales)
+  puntos_remanentes numeric(14,2) not null default 0,                       -- disponibles = acum − pendientes
   activa boolean not null default true,
   created_at timestamptz not null default now()
 );
@@ -55,6 +56,7 @@ insert into public.config (id) values (1) on conflict (id) do nothing;
 create table if not exists public.comercios (
   id uuid primary key default gen_random_uuid(),
   nombre text not null unique,
+  logo_url text,
   activo boolean not null default true,
   created_at timestamptz not null default now()
 );
@@ -206,7 +208,10 @@ begin
   -- Puntos = parte entera de (pesos / pesos_por_punto)
   v_puntos := floor(p_factura_pesos / v_pxp);
 
-  update public.tarjetas set puntos = puntos + v_puntos where id = v_card.id;
+  update public.tarjetas
+    set puntos = puntos + v_puntos,
+        puntos_remanentes = puntos_remanentes + v_puntos
+    where id = v_card.id;
 
   v_email := coalesce(p_usuario_email, (select email from public.profiles where id = auth.uid()));
   select nombre into v_nombre from public.clientes where id = v_card.cliente_id;
@@ -404,18 +409,8 @@ from (
 group by m.cliente_id, m.comercio_id;
 
 -- Saldos por comercio de un cliente (para el front)
-create or replace function public.saldos_cliente(p_cliente_id uuid)
-returns table(comercio_id uuid, comercio_nombre text, puntos numeric)
-language sql
-security definer set search_path = public
-as $$
-  select s.comercio_id, co.nombre, s.puntos
-  from public.saldos_por_comercio s
-  join public.comercios co on co.id = s.comercio_id
-  where s.cliente_id = p_cliente_id
-  order by co.nombre;
-$$;
-grant execute on function public.saldos_cliente(uuid) to authenticated;
+-- saldos_cliente: se define su versión final (con pendientes) al pie del schema,
+-- después de crear la tabla public.solicitudes de la que depende.
 
 create or replace function public.canjear_premio(
   p_cliente_id uuid,
@@ -551,3 +546,211 @@ create policy "premios foto update" on storage.objects
 drop policy if exists "premios foto delete" on storage.objects;
 create policy "premios foto delete" on storage.objects
   for delete to authenticated using (bucket_id = 'premios' and public.is_admin());
+
+-- Storage: bucket público para los logos de comercios
+insert into storage.buckets (id, name, public)
+values ('comercios', 'comercios', true)
+on conflict (id) do nothing;
+
+drop policy if exists "comercios logo lectura" on storage.objects;
+create policy "comercios logo lectura" on storage.objects
+  for select using (bucket_id = 'comercios');
+drop policy if exists "comercios logo insert" on storage.objects;
+create policy "comercios logo insert" on storage.objects
+  for insert to authenticated with check (bucket_id = 'comercios' and public.is_admin());
+drop policy if exists "comercios logo update" on storage.objects;
+create policy "comercios logo update" on storage.objects
+  for update to authenticated using (bucket_id = 'comercios' and public.is_admin());
+drop policy if exists "comercios logo delete" on storage.objects;
+create policy "comercios logo delete" on storage.objects
+  for delete to authenticated using (bucket_id = 'comercios' and public.is_admin());
+
+-- ============================================================
+--  SOLICITUDES DE CANJE (flujo de estados)
+--  (idéntico a supabase/migration_solicitudes.sql)
+-- ============================================================
+create table if not exists public.solicitudes (
+  id uuid primary key default gen_random_uuid(),
+  premio_id uuid references public.premios(id) on delete set null,
+  premio_titulo text,
+  cliente_id uuid references public.clientes(id) on delete set null,
+  cliente_nombre text,
+  tarjeta_id uuid references public.tarjetas(id) on delete set null,
+  numero_tarjeta text,
+  comercio_id uuid references public.comercios(id) on delete set null,
+  comercio_nombre text,
+  puntos numeric(14,2) not null,
+  estado text not null default 'pendiente'
+    check (estado in ('pendiente', 'revision', 'confirmado', 'entregado', 'rechazada')),
+  canje_id uuid references public.canjes(id) on delete set null,
+  solicitado_por text,
+  actualizado_por text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists idx_solicitudes_estado on public.solicitudes(estado);
+create index if not exists idx_solicitudes_cliente on public.solicitudes(cliente_id);
+create index if not exists idx_solicitudes_fecha on public.solicitudes(created_at);
+
+alter table public.solicitudes enable row level security;
+drop policy if exists "solicitudes select" on public.solicitudes;
+create policy "solicitudes select" on public.solicitudes
+  for select to authenticated using (true);
+
+create or replace function public.crear_solicitud(
+  p_cliente_id uuid,
+  p_premio_id uuid,
+  p_usuario_email text default null
+)
+returns json
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_card public.tarjetas%rowtype;
+  v_premio public.premios%rowtype;
+  v_nombre text;
+  v_email text;
+  v_saldo numeric;
+  v_pend_com numeric;
+  v_costo numeric;
+  v_com_nombre text;
+  v_sol public.solicitudes%rowtype;
+begin
+  select * into v_card from public.tarjetas where cliente_id = p_cliente_id for update;
+  if not found then raise exception 'El cliente no tiene una tarjeta emitida'; end if;
+  if v_card.activa = false then raise exception 'La tarjeta del cliente está inactiva'; end if;
+
+  select * into v_premio from public.premios where id = p_premio_id;
+  if not found then raise exception 'Premio no encontrado'; end if;
+  if v_premio.activo = false then raise exception 'El premio no está disponible'; end if;
+  if v_premio.stock <= 0 then raise exception 'No hay stock disponible del premio'; end if;
+
+  v_costo := v_premio.puntos_necesarios;
+
+  -- Guarda por remanentes totales (acumulados − pendientes)
+  if v_card.puntos_remanentes < v_costo then
+    raise exception 'Puntos remanentes insuficientes: disponibles %, se requieren % (hay canjes pendientes)',
+      v_card.puntos_remanentes, v_costo;
+  end if;
+
+  -- Guarda por comercio (saldo real del comercio − pendientes de ese comercio)
+  if v_premio.comercio_id is not null then
+    select coalesce(sum(puntos), 0) into v_saldo from public.saldos_por_comercio
+      where cliente_id = p_cliente_id and comercio_id = v_premio.comercio_id;
+    select coalesce(sum(puntos), 0) into v_pend_com from public.solicitudes
+      where cliente_id = p_cliente_id and comercio_id = v_premio.comercio_id and estado in ('pendiente', 'revision');
+    if (v_saldo - v_pend_com) < v_costo then
+      raise exception 'Puntos insuficientes en el comercio (considerando pendientes): disponibles %, se requieren %',
+        (v_saldo - v_pend_com), v_costo;
+    end if;
+    select nombre into v_com_nombre from public.comercios where id = v_premio.comercio_id;
+  end if;
+
+  v_email := coalesce(p_usuario_email, (select email from public.profiles where id = auth.uid()));
+  select nombre into v_nombre from public.clientes where id = p_cliente_id;
+
+  -- Reserva: baja remanentes, NO toca acumulados
+  update public.tarjetas set puntos_remanentes = puntos_remanentes - v_costo where id = v_card.id;
+
+  insert into public.solicitudes (
+    premio_id, premio_titulo, cliente_id, cliente_nombre, tarjeta_id, numero_tarjeta,
+    comercio_id, comercio_nombre, puntos, estado, solicitado_por
+  ) values (
+    v_premio.id, v_premio.titulo, p_cliente_id, v_nombre, v_card.id, v_card.numero,
+    v_premio.comercio_id, v_com_nombre, v_costo, 'pendiente', v_email
+  )
+  returning * into v_sol;
+
+  return json_build_object(
+    'solicitud_id', v_sol.id, 'estado', 'pendiente',
+    'premio', v_premio.titulo, 'cliente', v_nombre, 'puntos', v_costo,
+    'remanentes', v_card.puntos_remanentes - v_costo
+  );
+end;
+$$;
+grant execute on function public.crear_solicitud(uuid, uuid, text) to authenticated;
+
+create or replace function public.cambiar_estado_solicitud(
+  p_solicitud_id uuid,
+  p_nuevo_estado text,
+  p_usuario_email text default null
+)
+returns json
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_sol public.solicitudes%rowtype;
+  v_email text;
+  v_res json;
+  v_canje_id uuid;
+begin
+  select * into v_sol from public.solicitudes where id = p_solicitud_id for update;
+  if not found then raise exception 'Solicitud no encontrada'; end if;
+
+  if p_nuevo_estado not in ('pendiente', 'revision', 'confirmado', 'entregado', 'rechazada') then
+    raise exception 'Estado inválido';
+  end if;
+  if p_nuevo_estado = 'confirmado' and v_sol.estado not in ('pendiente', 'revision') then
+    raise exception 'Solo se puede confirmar una solicitud pendiente o en revisión';
+  end if;
+  if p_nuevo_estado = 'entregado' and v_sol.estado <> 'confirmado' then
+    raise exception 'Solo se puede entregar un premio con el canje confirmado';
+  end if;
+  if p_nuevo_estado = 'rechazada' and v_sol.estado not in ('pendiente', 'revision') then
+    raise exception 'Solo se puede rechazar una solicitud pendiente o en revisión';
+  end if;
+
+  v_email := coalesce(p_usuario_email, (select email from public.profiles where id = auth.uid()));
+
+  if p_nuevo_estado = 'confirmado' and v_sol.canje_id is null then
+    -- Se hace efectivo: descuenta acumulados y stock (la reserva de remanentes queda aplicada)
+    if v_sol.premio_id is null then raise exception 'El premio de la solicitud ya no existe'; end if;
+    v_res := public.canjear_premio(v_sol.cliente_id, v_sol.premio_id, v_email);
+    v_canje_id := (v_res->>'canje_id')::uuid;
+    update public.solicitudes
+      set estado = 'confirmado', canje_id = v_canje_id, actualizado_por = v_email, updated_at = now()
+      where id = p_solicitud_id;
+  else
+    -- Al rechazar una pendiente/revisión, se libera la reserva de remanentes
+    if p_nuevo_estado = 'rechazada' and v_sol.estado in ('pendiente', 'revision') then
+      update public.tarjetas set puntos_remanentes = puntos_remanentes + v_sol.puntos
+        where cliente_id = v_sol.cliente_id;
+    end if;
+    update public.solicitudes
+      set estado = p_nuevo_estado, actualizado_por = v_email, updated_at = now()
+      where id = p_solicitud_id;
+  end if;
+
+  return json_build_object('id', p_solicitud_id, 'estado', p_nuevo_estado);
+end;
+$$;
+grant execute on function public.cambiar_estado_solicitud(uuid, text, text) to authenticated;
+
+-- ============================================================
+--  saldos_cliente (versión final: saldo, pendiente y remanente por comercio)
+--  Se define acá, ya creada la tabla public.solicitudes.
+-- ============================================================
+drop function if exists public.saldos_cliente(uuid);
+create or replace function public.saldos_cliente(p_cliente_id uuid)
+returns table(comercio_id uuid, comercio_nombre text, saldo numeric, pendiente numeric, remanente numeric)
+language sql
+security definer set search_path = public
+as $$
+  select s.comercio_id, co.nombre,
+         s.puntos as saldo,
+         coalesce(p.pend, 0) as pendiente,
+         s.puntos - coalesce(p.pend, 0) as remanente
+  from public.saldos_por_comercio s
+  join public.comercios co on co.id = s.comercio_id
+  left join (
+    select comercio_id, sum(puntos) as pend
+    from public.solicitudes
+    where cliente_id = p_cliente_id and comercio_id is not null and estado in ('pendiente', 'revision')
+    group by comercio_id
+  ) p on p.comercio_id = s.comercio_id
+  where s.cliente_id = p_cliente_id
+  order by co.nombre;
+$$;
+grant execute on function public.saldos_cliente(uuid) to authenticated;

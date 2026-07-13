@@ -47,7 +47,7 @@ export default function CargarPuntos() {
         .from('clientes')
         .select('id, nombre, dni, tarjetas(numero, puntos, activa)')
         .order('nombre'),
-      supabase.from('comercios').select('id, nombre').eq('activo', true).order('nombre'),
+      supabase.from('comercios').select('id, nombre, logo_url').eq('activo', true).order('nombre'),
       supabase.from('config').select('pesos_por_punto, max_factura_pesos').eq('id', 1).single(),
     ])
     const mapped = (cData || []).map((c) => {
@@ -65,6 +65,7 @@ export default function CargarPuntos() {
   }, [])
 
   const cliente = clientes.find((c) => c.id === clienteId) || null
+  const comercioSel = comercios.find((c) => c.id === comercioId) || null
   const pesos = Number(pesosDigitos || 0)
   const puntosPreview = useMemo(() => (pxp > 0 ? Math.floor(pesos / pxp) : 0), [pesos, pxp])
 
@@ -170,6 +171,16 @@ export default function CargarPuntos() {
               </option>
             ))}
           </Select>
+          {comercioSel?.logo_url && (
+            <div className="flex items-center gap-2 text-sm text-slate-500">
+              <img
+                src={comercioSel.logo_url}
+                alt=""
+                className="h-9 w-9 rounded border border-slate-200 object-contain bg-white"
+              />
+              {comercioSel.nombre}
+            </div>
+          )}
           {comercios.length === 0 && (
             <p className="text-xs text-amber-600">
               No hay comercios activos. Creá uno en la solapa <b>Comercios</b> antes de cargar puntos.

@@ -23,7 +23,7 @@ export default function Clientes() {
     const [{ data, error }, { data: cg }, { data: cj }] = await Promise.all([
       supabase
         .from('clientes')
-        .select('*, tarjetas(numero, puntos, activa)')
+        .select('*, tarjetas(numero, puntos, puntos_remanentes, activa)')
         .order('created_at', { ascending: false }),
       supabase.from('cargas').select('cliente_id'),
       supabase.from('canjes').select('cliente_id'),
@@ -390,7 +390,7 @@ export default function Clientes() {
                   <th className="py-2 pr-3">DNI</th>
                   <th className="py-2 pr-3">Contacto</th>
                   <th className="py-2 pr-3">Tarjeta</th>
-                  <th className="py-2 pr-3 text-right">Puntos</th>
+                  <th className="py-2 pr-3 text-right">Puntos (acum · disp)</th>
                   <th className="py-2 pr-3">Estado</th>
                   <th className="py-2 pr-3 text-right">Acciones</th>
                 </tr>
@@ -422,8 +422,16 @@ export default function Clientes() {
                           </span>
                         )}
                       </td>
-                      <td className="py-2 pr-3 text-right" data-label="Puntos">
-                        <Badge color="amber">⭐ {puntos(t?.puntos || 0)}</Badge>
+                      <td className="py-2 pr-3 text-right" data-label="Puntos (acum · disp)">
+                        <div className="flex flex-col items-end gap-0.5">
+                          <Badge color="amber">⭐ {puntos(t?.puntos || 0)}</Badge>
+                          <span
+                            className="text-xs text-slate-400"
+                            title="Puntos remanentes (disponibles para canjear, descontando pendientes)"
+                          >
+                            disp: {puntos(t?.puntos_remanentes ?? t?.puntos ?? 0)}
+                          </span>
+                        </div>
                       </td>
                       <td className="py-2 pr-3" data-label="Estado">
                         <Badge color={c.activo ? 'green' : 'slate'}>{c.activo ? 'Activo' : 'Inactivo'}</Badge>

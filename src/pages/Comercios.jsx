@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../supabaseClient'
 import { Button, Input, Card, Badge } from '../components/ui'
 
-const VACIO = { nombre: '', activo: true }
+const VACIO = { nombre: '', logo_url: '', activo: true }
 
 export default function Comercios() {
   const [comercios, setComercios] = useState([])
@@ -11,6 +11,8 @@ export default function Comercios() {
   const [editId, setEditId] = useState(null)
   const [msg, setMsg] = useState(null)
   const [busqueda, setBusqueda] = useState('')
+  const [subiendo, setSubiendo] = useState(false)
+  const fileRef = useRef(null)
 
   async function cargar() {
     setLoading(true)
@@ -32,13 +34,39 @@ export default function Comercios() {
 
   function editar(c) {
     setEditId(c.id)
-    setForm({ nombre: c.nombre, activo: c.activo })
+    setForm({ nombre: c.nombre, logo_url: c.logo_url || '', activo: c.activo })
     setMsg(null)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
   function cancelar() {
     setEditId(null)
     setForm(VACIO)
+    if (fileRef.current) fileRef.current.value = ''
+  }
+
+  async function subirLogo(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setMsg(null)
+    setSubiendo(true)
+    try {
+      const ext = (file.name.split('.').pop() || 'png').toLowerCase()
+      const nombre = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+      const { error } = await supabase.storage.from('comercios').upload(nombre, file, { upsert: false })
+      if (error) throw error
+      const { data } = supabase.storage.from('comercios').getPublicUrl(nombre)
+      setForm((f) => ({ ...f, logo_url: data.publicUrl }))
+    } catch (err) {
+      setMsg({
+        tipo: 'error',
+        texto:
+          'No se pudo subir el logo: ' +
+          err.message +
+          '. Verificá que corriste la migración (bucket "comercios") o pegá una URL.',
+      })
+    } finally {
+      setSubiendo(false)
+    }
   }
 
   async function guardar(e) {
@@ -48,7 +76,7 @@ export default function Comercios() {
       setMsg({ tipo: 'error', texto: 'El nombre es obligatorio.' })
       return
     }
-    const payload = { nombre: form.nombre.trim(), activo: form.activo }
+    const payload = { nombre: form.nombre.trim(), logo_url: form.logo_url.trim() || null, activo: form.activo }
     const { error } = editId
       ? await supabase.from('comercios').update(payload).eq('id', editId)
       : await supabase.from('comercios').insert(payload)
@@ -106,6 +134,35 @@ export default function Comercios() {
             onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))}
             required
           />
+          <div className="md:col-span-3">
+            <span className="block text-sm font-medium text-slate-600 mb-1">Logo</span>
+            <div className="flex items-start gap-3">
+              <div className="h-20 w-20 shrink-0 rounded-lg border border-slate-200 bg-slate-50 grid place-items-center overflow-hidden">
+                {form.logo_url ? (
+                  <img src={form.logo_url} alt="Logo" className="h-full w-full object-contain" />
+                ) : (
+                  <span className="text-2xl">🏬</span>
+                )}
+              </div>
+              <div className="flex-1 space-y-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={subiendo}
+                  onClick={() => fileRef.current?.click()}
+                >
+                  {subiendo ? 'Subiendo…' : '⬆️ Subir logo'}
+                </Button>
+                <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={subirLogo} />
+                <Input
+                  label="o pegá una URL de imagen"
+                  value={form.logo_url}
+                  onChange={(e) => setForm((f) => ({ ...f, logo_url: e.target.value }))}
+                  placeholder="https://…"
+                />
+              </div>
+            </div>
+          </div>
           <label className="flex items-center gap-2 text-sm text-slate-600 pb-2">
             <input
               type="checkbox"
@@ -156,7 +213,16 @@ export default function Comercios() {
                 {filtrados.map((c) => (
                   <tr key={c.id} className={`border-b border-slate-100 ${c.activo ? '' : 'opacity-60'}`}>
                     <td className="py-2 pr-3 font-medium text-slate-700" data-label="Comercio">
-                      {c.nombre}
+                      <div className="flex items-center gap-2 justify-end lg:justify-start">
+                        <div className="h-8 w-8 shrink-0 rounded border border-slate-200 bg-slate-50 grid place-items-center overflow-hidden">
+                          {c.logo_url ? (
+                            <img src={c.logo_url} alt={c.nombre} className="h-full w-full object-contain" />
+                          ) : (
+                            <span className="text-sm">🏬</span>
+                          )}
+                        </div>
+                        <span>{c.nombre}</span>
+                      </div>
                     </td>
                     <td className="py-2 pr-3" data-label="Estado">
                       <Badge color={c.activo ? 'green' : 'slate'}>{c.activo ? 'Activo' : 'Inactivo'}</Badge>
