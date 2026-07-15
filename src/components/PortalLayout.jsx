@@ -44,7 +44,7 @@ export default function PortalLayout() {
   const primerNombre = (nombre || datos?.cliente?.nombre || '').split(' ')[0]
 
   const sidebar = (
-    <aside className="w-60 shrink-0 bg-[#2b2a33] text-slate-300 flex flex-col min-h-screen">
+    <aside className="w-60 shrink-0 bg-[#2b2a33] text-slate-300 flex flex-col h-full min-h-screen">
       <div className="flex items-center gap-3 px-5 py-4 border-b border-white/10">
         <span className="text-3xl">🎁</span>
         <span className="font-bold text-white uppercase leading-tight">

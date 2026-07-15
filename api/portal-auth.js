@@ -146,7 +146,13 @@ async function olvido(req, res, admin) {
       .update({ reset_token_hash: sha256(token), reset_token_expira: expira })
       .eq('id', uw.id)
 
-    const base = (process.env.PORTAL_URL || req.headers.origin || '').replace(/\/$/, '')
+    // Base del link: PORTAL_URL > Origin del navegador > host del request (Vercel).
+    // Siempre debe quedar una URL absoluta: un href relativo en un mail no abre nada.
+    const host = req.headers['x-forwarded-host'] || req.headers.host
+    const base = (process.env.PORTAL_URL || req.headers.origin || (host ? `https://${host}` : ''))
+      .trim()
+      .replace(/\/$/, '')
+    if (!base) throw new Error('No se pudo determinar la URL del portal: configurá PORTAL_URL en el servidor.')
     const link = `${base}/portal/login?reset=${token}`
     await enviarEmailBrevo({
       to: uw.email,

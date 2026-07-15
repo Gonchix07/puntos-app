@@ -10,6 +10,27 @@ const ESTADOS = {
   rechazada: { label: 'Rechazada', color: 'red' },
 }
 
+// Pill de comercio (con logo) o "General" — mismo esquema que la vista de premios del alta
+function ComercioPill({ comercioId, nombre, logo }) {
+  if (!comercioId) {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-700">
+        🌐 General
+      </span>
+    )
+  }
+  return (
+    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-700">
+      {logo ? (
+        <img src={logo} alt="" className="h-4 w-4 rounded-sm object-contain bg-white" />
+      ) : (
+        '🏬'
+      )}
+      {nombre || 'Comercio'}
+    </span>
+  )
+}
+
 export default function PortalCatalogo() {
   const { datos, recargar, api } = useOutletContext()
   const [msg, setMsg] = useState(null)
@@ -64,39 +85,51 @@ export default function PortalCatalogo() {
           <p className="text-sm text-slate-400">Por el momento no hay premios disponibles.</p>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {premios.map((p) => {
             const alcanza = disponibles >= Number(p.puntos_necesarios)
+            const sinStock = p.stock <= 0
             return (
-              <Card key={p.id} className="flex flex-col overflow-hidden !p-0">
-                <div className="h-40 bg-slate-100 grid place-items-center overflow-hidden">
-                  {p.foto_url ? (
-                    <img src={p.foto_url} alt={p.titulo} className="h-full w-full object-cover" />
-                  ) : (
-                    <span className="text-5xl">🎁</span>
+              <Card key={p.id} className="relative flex flex-col p-0 overflow-hidden min-h-[340px]">
+                {/* Imagen de fondo (ocupa toda la tarjeta) */}
+                {p.foto_url ? (
+                  <img src={p.foto_url} alt={p.titulo} className="absolute inset-0 h-full w-full object-cover" />
+                ) : (
+                  <div className="absolute inset-0 grid place-items-center bg-slate-100 text-6xl">🎁</div>
+                )}
+                {/* Degradado para que el texto se lea sobre la foto */}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/40 to-transparent" />
+
+                {/* Contenido apoyado abajo, sin fondo blanco */}
+                <div className="relative mt-auto p-4 flex flex-col gap-2 text-white">
+                  <h3 className="font-semibold text-white drop-shadow-sm">{p.titulo}</h3>
+                  {p.descripcion && (
+                    <p className="text-sm text-white/85 line-clamp-2 drop-shadow-sm">{p.descripcion}</p>
                   )}
-                </div>
-                <div className="p-4 flex-1 flex flex-col gap-2">
-                  <div className="flex items-start justify-between gap-2">
-                    <h3 className="font-semibold text-slate-800 leading-tight">{p.titulo}</h3>
-                    {p.comercio?.nombre ? (
-                      <Badge color="sky">{p.comercio.nombre}</Badge>
-                    ) : (
-                      <Badge color="slate">Todos</Badge>
-                    )}
+                  <div>
+                    <ComercioPill
+                      comercioId={p.comercio_id}
+                      nombre={p.comercio?.nombre}
+                      logo={p.comercio?.logo_url}
+                    />
                   </div>
-                  {p.descripcion && <p className="text-xs text-slate-500 flex-1">{p.descripcion}</p>}
-                  <div className="flex items-center justify-between mt-auto pt-2">
-                    <span className="font-bold text-fuchsia-700">⭐ {puntos(p.puntos_necesarios)}</span>
-                    <span className="text-xs text-slate-400">Stock: {p.stock}</span>
+                  <div className="flex items-center justify-between">
+                    <Badge color="amber">⭐ {puntos(p.puntos_necesarios)} pts</Badge>
+                    <span
+                      className={`text-xs font-semibold drop-shadow-sm ${
+                        sinStock ? 'text-red-300' : 'text-white/90'
+                      }`}
+                    >
+                      {sinStock ? 'Sin stock' : `Stock: ${p.stock}`}
+                    </span>
                   </div>
                   <Button
                     className="w-full !bg-fuchsia-700 hover:!bg-fuchsia-800"
-                    disabled={!alcanza || canjeando === p.id}
+                    disabled={!alcanza || sinStock || canjeando === p.id}
                     onClick={() => setConfirmar(p)}
                     title={alcanza ? 'Solicitar canje' : 'No te alcanzan los puntos disponibles'}
                   >
-                    {canjeando === p.id ? 'Canjeando…' : alcanza ? 'Canjear' : 'Te faltan puntos'}
+                    {canjeando === p.id ? 'Canjeando…' : alcanza ? 'Solicitar canje' : 'Te faltan puntos'}
                   </Button>
                 </div>
               </Card>
