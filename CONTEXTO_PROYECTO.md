@@ -14,14 +14,19 @@ puntos-app/
 ├── api/
 │   ├── admin-users.js     # ABM de usuarios (service_role)
 │   ├── clientes.js        # REST API: alta de cliente (emite tarjeta)
-│   └── cargar-puntos.js   # REST API: carga de puntos (comercio obligatorio)
+│   ├── cargar-puntos.js   # REST API: carga de puntos (comercio obligatorio)
+│   ├── _portal.js         # Helpers del portal (scrypt, token HMAC, Brevo) — no es endpoint
+│   ├── portal-auth.js     # Auth del portal: registro/login/olvido/reset/cambiar_password
+│   └── portal-datos.js    # Datos del portal (GET) + canjear premio (POST)
 ├── src/
 │   ├── components/
 │   │   ├── ui.jsx          # Button, Input, Select, Card, Badge, Stat, money, puntos, formatTarjeta
 │   │   ├── Layout.jsx      # Navegación (con menús desplegables) + roles
+│   │   ├── PortalLayout.jsx # Layout del portal de clientes (sidebar oscura + header degradado)
 │   │   ├── ProtectedRoute.jsx
 │   │   └── ClienteCombo.jsx # Select editable (nombre/DNI/tarjeta)
 │   ├── contexts/AuthContext.jsx  # useAuth() -> { user, profile, role, isAdmin }
+│   ├── contexts/PortalAuthContext.jsx # Sesión del portal (token propio en localStorage)
 │   ├── pages/
 │   │   ├── Login.jsx
 │   │   ├── Dashboard.jsx        # Estadísticas con selectores de Período y Comercio
@@ -32,7 +37,13 @@ puntos-app/
 │   │   ├── Auditoria.jsx        # Movimientos (cargas + canjes) total/por cliente/por comercio + Excel
 │   │   ├── Configuracion.jsx    # $/punto + tope de importe por factura (admin)
 │   │   ├── Comercios.jsx        # ABM de comercios + logo (admin)
-│   │   └── Usuarios.jsx         # ABM usuarios (admin)
+│   │   ├── Usuarios.jsx         # ABM usuarios (admin)
+│   │   └── portal/              # Portal de clientes (perfil "Cliente")
+│   │       ├── PortalLogin.jsx      # Login + crear cuenta + olvido + reset (?reset=TOKEN)
+│   │       ├── PortalInicio.jsx     # Stats, gráfico por mes, donut y detalle por comercio
+│   │       ├── PortalCatalogo.jsx   # Catálogo de premios + canjear + mis solicitudes
+│   │       ├── PortalTarjeta.jsx    # Tarjeta virtual
+│   │       └── PortalCuenta.jsx     # Datos personales + cambio de contraseña
 │   ├── App.jsx / main.jsx / supabaseClient.js / index.css
 └── supabase/
     ├── schema.sql                      # Esquema completo (fresh install)
@@ -51,8 +62,20 @@ puntos-app/
 |---|---|
 | `admin` | Todo (Configuración: Parámetros, Comercios, Usuarios) |
 | `operador` | Inicio, Clientes, Cargar puntos, Premios, Auditoría |
+| Cliente (portal) | `/portal`: estadísticas, tarjeta virtual, catálogo y canje. NO usa Supabase Auth. |
 
 Badge: admin=amber (👑), operador=sky (🧑‍💼).
+
+---
+
+## Portal de clientes (`/portal`)
+- **Acceso**: link "¿Sos cliente?" en el login. Solo clientes **activos** con el tilde **Cliente Web**.
+- **Auth propia** (sin Supabase Auth): tabla **`usuarios_web`** (cliente_id único, email único, `password_hash` scrypt, reset_token_hash/expira, ultimo_login). RLS sin políticas → solo service_role vía `/api/portal-*`.
+- **Registro**: el cliente crea su cuenta con DNI + email (deben coincidir con su ficha) + contraseña (mín. 8).
+- **Sesión**: token HMAC-SHA256 (7 días) firmado con `PORTAL_TOKEN_SECRET`, guardado en localStorage (`portal_token`). Cada request valida en DB que la cuenta, el cliente y el tilde sigan activos.
+- **Olvido de contraseña**: mail por **Brevo** (`BREVO_API_KEY`, `BREVO_FROM_EMAIL`, `BREVO_FROM_NAME`, `PORTAL_URL`) con link `/portal/login?reset=TOKEN` (vence en 1 h; en DB solo se guarda el hash SHA-256 del token).
+- **Páginas**: Inicio (stats con borde fucsia, gráfico SVG de puntos por mes, donut por comercio, detalle por comercio, últimos movimientos), Catálogo (canjear → RPC `crear_solicitud` + "Mis canjes" con estados), Tarjeta Virtual, Mi cuenta (cambio de contraseña).
+- **Estética**: sidebar oscura `#2b2a33` + header degradado `from-violet-950 via-purple-800 to-fuchsia-700`, acentos fucsia.
 
 ---
 
@@ -137,6 +160,7 @@ Content-Type: application/json
 ## Variables de entorno
 - **Local (`.env`)**: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
 - **Vercel (además)**: `SUPABASE_SERVICE_ROLE_KEY`
+- **Portal de clientes (Vercel)**: `PORTAL_TOKEN_SECRET`, `PORTAL_URL`, `BREVO_API_KEY`, `BREVO_FROM_EMAIL`, `BREVO_FROM_NAME` (opcional)
 
 ⚠️ La `VITE_SUPABASE_URL` usa el **ref** del proyecto (subdominio aleatorio, ej. `https://xxxx.supabase.co`), no el nombre del proyecto.
 
@@ -162,5 +186,6 @@ migration_puntos_remanentes.sql  # puntos remanentes (reserva de pendientes)
 migration_comercio_logo.sql      # logo_url + bucket comercios
 migration_cliente_web.sql        # tilde "Cliente Web" en clientes
 migration_codigo_interno.sql     # código cliente interno (5 alfanuméricos, opcional)
+migration_usuarios_web.sql       # portal de clientes: tabla usuarios_web
 ```
 > Nota: `schema.sql` ya refleja el estado final; las migraciones son para bases creadas antes de cada cambio.

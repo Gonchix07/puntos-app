@@ -44,6 +44,21 @@ create table if not exists public.tarjetas (
   created_at timestamptz not null default now()
 );
 
+-- ---------- Portal de clientes: cuentas web (auth propia, sin Supabase Auth) ----------
+-- Solo accede el service_role desde las funciones serverless /api/portal-*.
+create table if not exists public.usuarios_web (
+  id uuid primary key default gen_random_uuid(),
+  cliente_id uuid not null unique references public.clientes(id) on delete cascade,
+  email text not null unique,
+  password_hash text not null,
+  activo boolean not null default true,
+  -- Recupero de contraseña: hash SHA-256 del token enviado por mail
+  reset_token_hash text,
+  reset_token_expira timestamptz,
+  ultimo_login timestamptz,
+  created_at timestamptz not null default now()
+);
+
 -- ---------- Configuración (fila única) ----------
 -- pesos_por_punto: cuántos $ equivalen a 1 punto. Arranca en 1 punto / $1000.
 create table if not exists public.config (
@@ -302,6 +317,8 @@ alter table public.tarjetas enable row level security;
 alter table public.config   enable row level security;
 alter table public.cargas   enable row level security;
 alter table public.comercios enable row level security;
+-- usuarios_web: RLS sin políticas = solo service_role (API del portal)
+alter table public.usuarios_web enable row level security;
 
 -- profiles: cada uno ve el suyo; admin ve todos y puede modificar rol
 drop policy if exists "perfil propio" on public.profiles;

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { Button, Input, Card } from '../components/ui'
 
@@ -75,6 +75,12 @@ export default function Login() {
             {loading ? 'Ingresando…' : 'Ingresar'}
           </Button>
         </form>
+
+        <div className="mt-4 text-center text-sm">
+          <Link to="/portal/login" className="text-fuchsia-700 hover:underline font-medium">
+            ¿Sos cliente? Ingresá al portal de clientes →
+          </Link>
+        </div>
 
         <div className="mt-6 pt-4 border-t text-center text-xs text-slate-400 leading-relaxed">
           <p className="font-medium text-slate-500">Departamento de Sistemas</p>

@@ -43,8 +43,12 @@ export function Select({ label, children, className = '', ...props }) {
   )
 }
 
-export function Card({ children, className = '' }) {
-  return <div className={`bg-white rounded-xl shadow-sm border border-slate-200 p-5 ${className}`}>{children}</div>
+export function Card({ children, className = '', ...props }) {
+  return (
+    <div className={`bg-white rounded-xl shadow-sm border border-slate-200 p-5 ${className}`} {...props}>
+      {children}
+    </div>
+  )
 }
 
 export function Badge({ children, color = 'slate' }) {
