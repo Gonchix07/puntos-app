@@ -5,7 +5,7 @@ import { supabase } from '../supabaseClient'
 import { useAuth } from '../contexts/AuthContext'
 import { Button, Input, Card, Badge, puntos, formatTarjeta } from '../components/ui'
 
-const VACIO = { nombre: '', dni: '', email: '', telefono: '' }
+const VACIO = { nombre: '', dni: '', email: '', telefono: '', cliente_web: false, codigo_interno: '' }
 
 export default function Clientes() {
   const { isAdmin } = useAuth()
@@ -54,6 +54,7 @@ export default function Clientes() {
         c.nombre?.toLowerCase().includes(q) ||
         String(c.dni || '').includes(q) ||
         c.email?.toLowerCase().includes(q) ||
+        c.codigo_interno?.toLowerCase().includes(q) ||
         String(t?.numero || '').includes(q.replace(/\s/g, ''))
       )
     })
@@ -61,7 +62,14 @@ export default function Clientes() {
 
   function editar(c) {
     setEditId(c.id)
-    setForm({ nombre: c.nombre, dni: c.dni, email: c.email || '', telefono: c.telefono || '' })
+    setForm({
+      nombre: c.nombre,
+      dni: c.dni,
+      email: c.email || '',
+      telefono: c.telefono || '',
+      cliente_web: !!c.cliente_web,
+      codigo_interno: c.codigo_interno || '',
+    })
     setMsg(null)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
@@ -90,11 +98,17 @@ export default function Clientes() {
       setMsg({ tipo: 'error', texto: 'Ingresá una dirección de email válida.' })
       return
     }
+    if (form.codigo_interno && !/^[A-Za-z0-9]{5}$/.test(form.codigo_interno)) {
+      setMsg({ tipo: 'error', texto: 'El código interno debe tener exactamente 5 caracteres alfanuméricos.' })
+      return
+    }
     const payload = {
       nombre: form.nombre.trim(),
       dni: form.dni.trim(),
       email: form.email.trim(),
       telefono: form.telefono.trim() || null,
+      cliente_web: !!form.cliente_web,
+      codigo_interno: form.codigo_interno || null,
     }
     let error
     if (editId) {
@@ -154,11 +168,11 @@ export default function Clientes() {
 
   function descargarPlantilla() {
     const encabezados = [
-      ['nombre *', 'dni *', 'email *', 'telefono (opcional)'],
-      ['Juan Pérez', '30123456', 'juan@ejemplo.com', '2235937766'],
+      ['nombre *', 'dni *', 'email *', 'telefono (opcional)', 'cliente web (SI/NO)', 'codigo interno (opcional)'],
+      ['Juan Pérez', '30123456', 'juan@ejemplo.com', '2235937766', 'NO', 'ABC12'],
     ]
     const ws = XLSX.utils.aoa_to_sheet(encabezados)
-    ws['!cols'] = [{ wch: 28 }, { wch: 14 }, { wch: 30 }, { wch: 20 }]
+    ws['!cols'] = [{ wch: 28 }, { wch: 14 }, { wch: 30 }, { wch: 20 }, { wch: 18 }, { wch: 22 }]
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Clientes')
     XLSX.writeFile(wb, 'plantilla_clientes.xlsx')
@@ -188,6 +202,13 @@ export default function Clientes() {
         const telefono = String(fila['telefono (opcional)'] || fila['telefono'] || '')
           .replace(/\D/g, '')
           .slice(0, 10)
+        const webRaw = String(fila['cliente web (SI/NO)'] || fila['cliente web'] || fila['cliente_web'] || '')
+          .trim()
+          .toUpperCase()
+        const clienteWeb = ['SI', 'SÍ', 'S', 'X', '1', 'TRUE', 'VERDADERO'].includes(webRaw)
+        const codigoInterno = String(fila['codigo interno (opcional)'] || fila['codigo interno'] || fila['codigo_interno'] || '')
+          .replace(/[^A-Za-z0-9]/g, '')
+          .toUpperCase()
 
         if (!nombre) { errores.push({ num, nombre: '—', motivo: 'Nombre vacío' }); continue }
         if (!dni) { errores.push({ num, nombre, motivo: 'DNI vacío o inválido' }); continue }
@@ -199,12 +220,18 @@ export default function Clientes() {
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
           errores.push({ num, nombre, motivo: `Email inválido: "${email}"` }); continue
         }
+        if (codigoInterno && !/^[A-Z0-9]{5}$/.test(codigoInterno)) {
+          errores.push({ num, nombre, motivo: `Código interno inválido: "${codigoInterno}" (deben ser 5 caracteres alfanuméricos)` })
+          continue
+        }
 
         const payload = {
           nombre,
           dni,
           email,
           telefono: telefono || null,
+          cliente_web: clienteWeb,
+          codigo_interno: codigoInterno || null,
         }
 
         const { error } = await supabase.from('clientes').insert(payload)
@@ -273,6 +300,26 @@ export default function Clientes() {
               required
             />
             <Input label="Teléfono" value={form.telefono} onChange={onTel} placeholder="Solo números" />
+            <Input
+              label="Código interno (opcional)"
+              value={form.codigo_interno}
+              onChange={(e) =>
+                setForm((f) => ({
+                  ...f,
+                  codigo_interno: e.target.value.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 5),
+                }))
+              }
+              maxLength={5}
+              placeholder="5 caracteres"
+            />
+            <label className="flex items-center gap-2 text-sm text-slate-600 pb-2">
+              <input
+                type="checkbox"
+                checked={form.cliente_web}
+                onChange={(e) => setForm((f) => ({ ...f, cliente_web: e.target.checked }))}
+              />
+              Cliente Web
+            </label>
             <div className="flex gap-2">
               <Button type="submit" className="flex-1">
                 {editId ? 'Guardar' : 'Crear'}
@@ -406,6 +453,16 @@ export default function Clientes() {
                     >
                       <td className="py-2 pr-3 font-medium text-slate-700" data-label="Cliente">
                         {c.nombre}
+                        {c.cliente_web && (
+                          <span className="ml-2">
+                            <Badge color="sky">🌐 web</Badge>
+                          </span>
+                        )}
+                        {c.codigo_interno && (
+                          <div className="text-xs font-mono font-normal text-slate-400">
+                            cód: {c.codigo_interno}
+                          </div>
+                        )}
                       </td>
                       <td className="py-2 pr-3" data-label="DNI">
                         {c.dni}

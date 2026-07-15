@@ -21,6 +21,9 @@ create table if not exists public.clientes (
   email text,
   telefono text,
   activo boolean not null default true,
+  cliente_web boolean not null default false,
+  -- Código interno opcional: 5 caracteres alfanuméricos
+  codigo_interno text check (codigo_interno is null or codigo_interno ~ '^[A-Za-z0-9]{5}$'),
   created_at timestamptz not null default now()
 );
 

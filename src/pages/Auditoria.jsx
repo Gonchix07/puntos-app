@@ -4,6 +4,15 @@ import * as XLSX from 'xlsx'
 import { supabase } from '../supabaseClient'
 import { Button, Card, Select, Badge, money, puntos } from '../components/ui'
 
+// Mismo período inicial que el Dashboard: últimos 30 días
+function hace30Dias() {
+  const d = new Date()
+  d.setDate(d.getDate() - 30)
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  return `${d.getFullYear()}-${mm}-${dd}`
+}
+
 export default function Auditoria() {
   const [searchParams] = useSearchParams()
   const [cargas, setCargas] = useState([])
@@ -15,7 +24,7 @@ export default function Auditoria() {
   const [comercioId, setComercioId] = useState('')
   const [tipo, setTipo] = useState('') // '' | 'carga' | 'canje'
   const [origen, setOrigen] = useState('')
-  const [desde, setDesde] = useState('')
+  const [desde, setDesde] = useState(hace30Dias)
   const [hasta, setHasta] = useState('')
 
   useEffect(() => {

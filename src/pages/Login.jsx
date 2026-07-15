@@ -33,7 +33,7 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen grid place-items-center bg-gradient-to-br from-indigo-600 to-indigo-900 px-4">
+    <div className="min-h-screen grid place-items-center bg-gradient-to-br from-violet-950 via-violet-800 to-violet-600 px-4">
       <Card className="w-full max-w-sm">
         <div className="text-center mb-6">
           <div className="text-4xl mb-2">
