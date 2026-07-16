@@ -67,7 +67,12 @@ export default function Auditoria() {
       numero_tarjeta: c.numero_tarjeta,
       comercio_id: c.comercio_id,
       comercio_nombre: c.comercio_nombre,
-      detalle: c.factura_numero ? `Factura ${c.factura_numero}` : 'Carga de puntos',
+      detalle:
+        c.origen === 'ajuste'
+          ? `Ajuste: ${c.motivo || 'de puntos'}`
+          : c.factura_numero
+            ? `Factura ${c.factura_numero}`
+            : 'Carga de puntos',
       importe: Number(c.factura_pesos || 0),
       puntos: Number(c.puntos || 0), // positivo
       origen: c.origen,
@@ -212,6 +217,7 @@ export default function Auditoria() {
             <option value="">Todos</option>
             <option value="manual">Manual</option>
             <option value="api">API</option>
+            <option value="ajuste">Ajuste</option>
           </Select>
           <label className="block">
             <span className="block text-sm font-medium text-slate-600 mb-1">Desde</span>
@@ -285,10 +291,14 @@ export default function Auditoria() {
                     </td>
                     <td className="py-2 pr-3" data-label="Tipo">
                       {m.tipo === 'carga' ? (
-                        <span className="inline-flex items-center gap-1">
-                          <Badge color="sky">Carga</Badge>
-                          {m.origen && <span className="text-xs text-slate-400">{m.origen}</span>}
-                        </span>
+                        m.origen === 'ajuste' ? (
+                          <Badge color="amber">Ajuste</Badge>
+                        ) : (
+                          <span className="inline-flex items-center gap-1">
+                            <Badge color="sky">Carga</Badge>
+                            {m.origen && <span className="text-xs text-slate-400">{m.origen}</span>}
+                          </span>
+                        )
                       ) : m.tipo === 'canje' ? (
                         <Badge color="indigo">Canje</Badge>
                       ) : (

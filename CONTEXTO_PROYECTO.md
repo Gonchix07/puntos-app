@@ -32,6 +32,7 @@ puntos-app/
 │   │   ├── Dashboard.jsx        # Estadísticas con selectores de Período y Comercio
 │   │   ├── Clientes.jsx         # ABM + import Excel + baja lógica + acción "Movimientos"
 │   │   ├── CargarPuntos.jsx     # Carga manual por factura (comercio + nº + $)
+│   │   ├── AjustePuntos.jsx     # Ajuste de puntos ±, por comercio, con motivo (admin; RPC ajustar_puntos)
 │   │   ├── Premios.jsx          # Catálogo e-commerce + alta (admin) + solicitar canje
 │   │   ├── SolicitudesPremios.jsx # Flujo de estados de las solicitudes de canje
 │   │   ├── Auditoria.jsx        # Movimientos (cargas + canjes + estados de solicitudes) + Excel; arranca en últimos 30 días
@@ -53,8 +54,8 @@ puntos-app/
 ---
 
 ## Menú de navegación
-- **Admin**: Inicio · Clientes · Cargar puntos · **Premios ▾** (Alta Premio · Solicitudes) · **Configuración ▾** (Parámetros · Comercios · Usuarios) · Auditoría
-- **Operador**: Inicio · Clientes · Cargar puntos · **Premios ▾** · Auditoría
+- **Admin**: Inicio · Clientes · **Puntos ▾** (Carga · Ajuste) · **Premios ▾** (Alta Premio · Solicitudes) · **Configuración ▾** (Parámetros · Comercios · Usuarios) · Auditoría
+- **Operador**: Inicio · Clientes · Puntos (solo carga) · **Premios ▾** · Auditoría
 - Los desplegables (`NavDropdown` en `Layout.jsx`) se aplanan en mobile.
 
 ## Roles
@@ -94,7 +95,7 @@ El saldo neto por comercio se calcula con la vista **`saldos_por_comercio`** = c
 - **tarjetas**: id, numero (16 díg. único), cliente_id (único, 1 por cliente), **puntos** (acumulados), **puntos_remanentes** (disponibles), activa
 - **config**: id=1, pesos_por_punto (default 1000), **max_factura_pesos** (default 9.999.999)
 - **comercios**: id, nombre (único), **logo_url**, activo
-- **cargas**: tarjeta_id, cliente_id, numero_tarjeta, cliente_nombre, **comercio_id**, **comercio_nombre**, factura_numero (**único** cuando no es null), factura_pesos, pesos_por_punto (snapshot), puntos, origen ('manual'|'api'), usuario_email, created_at
+- **cargas**: tarjeta_id, cliente_id, numero_tarjeta, cliente_nombre, **comercio_id**, **comercio_nombre**, factura_numero (**único** cuando no es null), factura_pesos (null en ajustes), pesos_por_punto (snapshot), puntos (con signo en ajustes), origen ('manual'|'api'|'ajuste'), **motivo** (solo ajustes), usuario_email, created_at. RPC **`ajustar_puntos`** (admin): ingreso/egreso por comercio con motivo; valida saldo y remanentes en egresos.
 - **premios**: titulo, descripcion, foto_url, puntos_necesarios, stock, **comercio_id** (null = general/para todos), activo. El **stock inicial se define en el alta y no se edita más**: solo cambia por movimientos.
 - **premio_stock_mov**: ledger de stock por premio (tipo ingreso/egreso, cantidad, **motivo**, stock_resultante, usuario). Lo alimentan: trigger de alta (`Stock inicial`), RPC **`ajustar_stock_premio`** (ajustes justificados por select de motivos, solo admin) y `canjear_premio` (`Canje de premio`). UI: botón 📦 en cada tarjeta de premio.
 - **canjes**: premio_id, premio_titulo, cliente_id, cliente_nombre, tarjeta_id, numero_tarjeta, puntos, **comercio_id/comercio_nombre** (del premio; null = general), usuario_email
@@ -190,5 +191,6 @@ migration_codigo_interno.sql     # código cliente interno (5 alfanuméricos, op
 migration_usuarios_web.sql       # portal de clientes: tabla usuarios_web
 migration_solicitudes_historial.sql # historial de estados de solicitudes (trigger) para Auditoría
 migration_stock_premios.sql      # stock de premios por movimientos (ajustes justificados + canjes)
+migration_ajuste_puntos.sql      # ajuste de puntos: origen 'ajuste' en cargas + RPC ajustar_puntos
 ```
 > Nota: `schema.sql` ya refleja el estado final; las migraciones son para bases creadas antes de cada cambio.

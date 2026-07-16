@@ -69,19 +69,27 @@ export default function Layout() {
     ],
   }
 
+  const puntosItem = {
+    label: 'Puntos',
+    children: [
+      { to: '/cargar', label: 'Carga', end: true },
+      { to: '/ajuste', label: 'Ajuste' },
+    ],
+  }
+
   const adminLinks = [
     { to: '/', label: 'Inicio', end: true },
     { to: '/clientes', label: 'Clientes' },
-    { to: '/cargar', label: 'Cargar puntos' },
+    puntosItem,
     premiosItem,
     configItem,
     { to: '/auditoria', label: 'Auditoría' },
   ]
-  // El operador puede consultar y cargar puntos, pero no configurar ni gestionar usuarios
+  // El operador puede consultar y cargar puntos, pero no ajustar, configurar ni gestionar usuarios
   const operadorLinks = [
     { to: '/', label: 'Inicio', end: true },
     { to: '/clientes', label: 'Clientes' },
-    { to: '/cargar', label: 'Cargar puntos' },
+    { to: '/cargar', label: 'Puntos' },
     premiosItem,
     { to: '/auditoria', label: 'Auditoría' },
   ]

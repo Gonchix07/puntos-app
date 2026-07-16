@@ -15,6 +15,7 @@ import CargarPuntos from './pages/CargarPuntos'
 import Premios from './pages/Premios'
 import SolicitudesPremios from './pages/SolicitudesPremios'
 import Auditoria from './pages/Auditoria'
+import AjustePuntos from './pages/AjustePuntos'
 import Comercios from './pages/Comercios'
 import Configuracion from './pages/Configuracion'
 import Usuarios from './pages/Usuarios'
@@ -48,6 +49,7 @@ export default function App() {
           </ProtectedRoute>
         }
       >
+        <Route path="/ajuste" element={<AjustePuntos />} />
         <Route path="/comercios" element={<Comercios />} />
         <Route path="/configuracion" element={<Configuracion />} />
         <Route path="/usuarios" element={<Usuarios />} />
