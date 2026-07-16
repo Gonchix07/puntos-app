@@ -10,7 +10,10 @@ export default function GraficoLinea({ datos = [], etiquetaTooltip = 'puntos' })
   const n = datos.length
   const valores = datos.map((d) => Number(d.valor || 0))
   const max = Math.max(1, ...valores)
-  const x = (i) => (n === 1 ? w / 2 : pad + (i * (w - 2 * pad)) / (n - 1))
+  // Margen izquierdo según el ancho de la etiqueta más larga del eje Y (~6px por carácter)
+  const etiquetasY = [0.25, 0.5, 0.75, 1].map((f) => puntos(Math.round(max * f)))
+  const padIzq = 14 + Math.max(...etiquetasY.map((t) => t.length)) * 6
+  const x = (i) => (n === 1 ? (padIzq + w - pad) / 2 : padIzq + (i * (w - padIzq - pad)) / (n - 1))
   const y = (v) => h - pad - (v / max) * (h - 2 * pad)
   const pts = valores.map((v, i) => [x(i), y(v)])
   const linea = pts.map(([px, py], i) => `${i ? 'L' : 'M'}${px},${py}`).join(' ')
@@ -20,18 +23,18 @@ export default function GraficoLinea({ datos = [], etiquetaTooltip = 'puntos' })
 
   return (
     <svg viewBox={`0 0 ${w} ${h}`} className="w-full" role="img" aria-label="Evolución por mes">
-      {[0.25, 0.5, 0.75, 1].map((f) => (
+      {[0.25, 0.5, 0.75, 1].map((f, idx) => (
         <g key={f}>
           <line
-            x1={pad}
+            x1={padIzq}
             y1={y(max * f)}
             x2={w - pad}
             y2={y(max * f)}
             stroke="#e2e8f0"
             strokeDasharray="3 4"
           />
-          <text x={pad - 8} y={y(max * f) + 4} textAnchor="end" fontSize="10" fill="#94a3b8">
-            {puntos(Math.round(max * f))}
+          <text x={padIzq - 8} y={y(max * f) + 4} textAnchor="end" fontSize="10" fill="#94a3b8">
+            {etiquetasY[idx]}
           </text>
         </g>
       ))}
