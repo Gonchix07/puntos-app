@@ -6,11 +6,44 @@ import { puntos } from './ui'
 // Layout del portal de clientes: sidebar oscura a la izquierda + barra
 // superior con degradado violeta (estética "shopping premium").
 
+// Íconos monocromo (trazo, heredan el color del texto vía currentColor)
+const PATHS = {
+  regalo:
+    'M21 11.25v8.25a1.5 1.5 0 0 1-1.5 1.5H4.5a1.5 1.5 0 0 1-1.5-1.5v-8.25M12 4.875A2.625 2.625 0 1 0 9.375 7.5H12m0-2.625V7.5m0-2.625A2.625 2.625 0 1 1 14.625 7.5H12m0 0V21m-8.625-9.75h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z',
+  inicio:
+    'M2.25 12 11.204 3.045c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75',
+  catalogo:
+    'M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25',
+  tarjeta:
+    'M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 0 0 2.25-2.25V6.75A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25v10.5A2.25 2.25 0 0 0 4.5 19.5Z',
+  cuenta:
+    'm16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10',
+  salir:
+    'M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9',
+}
+
+function Icono({ nombre, className = 'h-5 w-5' }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={`shrink-0 ${className}`}
+      aria-hidden="true"
+    >
+      <path d={PATHS[nombre]} />
+    </svg>
+  )
+}
+
 const ITEMS = [
-  { to: '/portal', icono: '🏠', label: 'Inicio', end: true },
-  { to: '/portal/catalogo', icono: '📖', label: 'Catálogo' },
-  { to: '/portal/tarjeta', icono: '💳', label: 'Tarjeta Virtual' },
-  { to: '/portal/cuenta', icono: '📝', label: 'Mi cuenta' },
+  { to: '/portal', icono: 'inicio', label: 'Inicio', end: true },
+  { to: '/portal/catalogo', icono: 'catalogo', label: 'Catálogo' },
+  { to: '/portal/tarjeta', icono: 'tarjeta', label: 'Tarjeta Virtual' },
+  { to: '/portal/cuenta', icono: 'cuenta', label: 'Mi cuenta' },
 ]
 
 export default function PortalLayout() {
@@ -46,7 +79,7 @@ export default function PortalLayout() {
   const sidebar = (
     <aside className="w-60 shrink-0 bg-[#2b2a33] text-slate-300 flex flex-col h-full min-h-screen">
       <div className="flex items-center gap-3 px-5 py-4 border-b border-white/10">
-        <span className="text-3xl">🎁</span>
+        <Icono nombre="regalo" className="h-8 w-8 text-white" />
         <span className="font-bold text-white uppercase leading-tight">
           Hola {primerNombre || 'cliente'}!
         </span>
@@ -68,14 +101,14 @@ export default function PortalLayout() {
               }`
             }
           >
-            <span>{item.icono}</span> {item.label}
+            <Icono nombre={item.icono} /> {item.label}
           </NavLink>
         ))}
         <button
           onClick={salir}
           className="w-full flex items-center gap-3 px-5 py-3 text-sm transition hover:bg-white/10 hover:text-white text-left"
         >
-          <span>🚪</span> Cerrar sesión
+          <Icono nombre="salir" /> Cerrar sesión
         </button>
       </nav>
       <div className="px-5 py-4 text-xs text-slate-500 border-t border-white/10">
