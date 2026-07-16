@@ -176,7 +176,7 @@ export default function CargarPuntos() {
               <img
                 src={comercioSel.logo_url}
                 alt=""
-                className="h-9 w-9 rounded border border-slate-200 object-contain bg-white"
+                className="h-9 w-9 rounded object-contain"
               />
               {comercioSel.nombre}
             </div>

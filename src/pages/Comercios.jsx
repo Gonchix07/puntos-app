@@ -137,7 +137,7 @@ export default function Comercios() {
           <div className="md:col-span-3">
             <span className="block text-sm font-medium text-slate-600 mb-1">Logo</span>
             <div className="flex items-start gap-3">
-              <div className="h-20 w-20 shrink-0 rounded-lg border border-slate-200 bg-slate-50 grid place-items-center overflow-hidden">
+              <div className="h-20 w-20 shrink-0 rounded-lg border border-slate-200 grid place-items-center overflow-hidden">
                 {form.logo_url ? (
                   <img src={form.logo_url} alt="Logo" className="h-full w-full object-contain" />
                 ) : (
@@ -214,7 +214,7 @@ export default function Comercios() {
                   <tr key={c.id} className={`border-b border-slate-100 ${c.activo ? '' : 'opacity-60'}`}>
                     <td className="py-2 pr-3 font-medium text-slate-700" data-label="Comercio">
                       <div className="flex items-center gap-2 justify-end lg:justify-start">
-                        <div className="h-8 w-8 shrink-0 rounded border border-slate-200 bg-slate-50 grid place-items-center overflow-hidden">
+                        <div className="h-8 w-8 shrink-0 rounded grid place-items-center overflow-hidden">
                           {c.logo_url ? (
                             <img src={c.logo_url} alt={c.nombre} className="h-full w-full object-contain" />
                           ) : (

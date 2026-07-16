@@ -14,7 +14,7 @@ export default async function handler(req, res) {
   const { admin, cliente, usuarioWeb } = sesion
 
   if (req.method === 'GET') {
-    const [tarjetaQ, saldosQ, premiosQ, solicitudesQ, cargasQ, canjesQ] = await Promise.all([
+    const [tarjetaQ, saldosQ, premiosQ, solicitudesQ, cargasQ, canjesQ, comerciosQ] = await Promise.all([
       admin
         .from('tarjetas')
         .select('numero, puntos, puntos_remanentes, activa')
@@ -42,6 +42,7 @@ export default async function handler(req, res) {
         .select('created_at, premio_titulo, comercio_id, comercio_nombre, puntos')
         .eq('cliente_id', cliente.id)
         .order('created_at', { ascending: false }),
+      admin.from('comercios').select('id, nombre, logo_url').order('nombre'),
     ])
 
     return res.status(200).json({
@@ -57,6 +58,7 @@ export default async function handler(req, res) {
       solicitudes: solicitudesQ.data || [],
       cargas: cargasQ.data || [],
       canjes: canjesQ.data || [],
+      comercios: comerciosQ.data || [],
     })
   }
 

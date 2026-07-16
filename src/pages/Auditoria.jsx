@@ -270,7 +270,7 @@ export default function Auditoria() {
                             <img
                               src={logoPorComercio.get(m.comercio_id)}
                               alt=""
-                              className="h-5 w-5 rounded-sm object-contain bg-white border border-slate-200"
+                              className="h-5 w-5 rounded-sm object-contain"
                             />
                           )}
                           {m.comercio_nombre}

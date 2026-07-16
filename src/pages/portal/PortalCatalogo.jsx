@@ -22,7 +22,7 @@ function ComercioPill({ comercioId, nombre, logo }) {
   return (
     <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-700">
       {logo ? (
-        <img src={logo} alt="" className="h-4 w-4 rounded-sm object-contain bg-white" />
+        <img src={logo} alt="" className="h-4 w-4 rounded-sm object-contain" />
       ) : (
         '🏬'
       )}
@@ -39,8 +39,9 @@ export default function PortalCatalogo() {
 
   if (!datos) return <p className="text-slate-500">Cargando…</p>
 
-  const { premios, solicitudes, tarjeta, saldos = [] } = datos
+  const { premios, solicitudes, tarjeta, saldos = [], comercios = [] } = datos
   const disponibles = Number(tarjeta?.puntos_remanentes ?? 0)
+  const logoPorComercio = new Map(comercios.map((c) => [c.id, c.logo_url]))
 
   async function canjear(premio) {
     setConfirmar(null)
@@ -71,7 +72,18 @@ export default function PortalCatalogo() {
         <div className="flex flex-wrap items-center gap-2">
           {saldos.map((s) => (
             <Badge key={s.comercio_id} color="amber">
-              🏬 {s.comercio_nombre}: ⭐ {puntos(s.remanente)}
+              <span className="inline-flex items-center gap-1.5">
+                {logoPorComercio.get(s.comercio_id) ? (
+                  <img
+                    src={logoPorComercio.get(s.comercio_id)}
+                    alt=""
+                    className="h-4 w-4 rounded-sm object-contain"
+                  />
+                ) : (
+                  '🏬'
+                )}
+                {s.comercio_nombre}: ⭐ {puntos(s.remanente)}
+              </span>
             </Badge>
           ))}
           <Badge color="indigo">Total disponible: ⭐ {puntos(disponibles)}</Badge>

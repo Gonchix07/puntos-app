@@ -26,7 +26,7 @@ function ComercioPill({ comercioId, nombre, logo }) {
   return (
     <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-700">
       {logo ? (
-        <img src={logo} alt="" className="h-4 w-4 rounded-sm object-contain bg-white" />
+        <img src={logo} alt="" className="h-4 w-4 rounded-sm object-contain" />
       ) : (
         '🏬'
       )}
