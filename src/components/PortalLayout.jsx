@@ -8,8 +8,6 @@ import { puntos } from './ui'
 
 // Íconos monocromo (trazo, heredan el color del texto vía currentColor)
 const PATHS = {
-  regalo:
-    'M21 11.25v8.25a1.5 1.5 0 0 1-1.5 1.5H4.5a1.5 1.5 0 0 1-1.5-1.5v-8.25M12 4.875A2.625 2.625 0 1 0 9.375 7.5H12m0-2.625V7.5m0-2.625A2.625 2.625 0 1 1 14.625 7.5H12m0 0V21m-8.625-9.75h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z',
   inicio:
     'M2.25 12 11.204 3.045c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75',
   catalogo:
@@ -79,7 +77,7 @@ export default function PortalLayout() {
   const sidebar = (
     <aside className="w-60 shrink-0 bg-[#2b2a33] text-slate-300 flex flex-col h-full min-h-screen">
       <div className="flex items-center gap-3 px-5 py-4 border-b border-white/10">
-        <Icono nombre="regalo" className="h-8 w-8 text-white" />
+        <Icono nombre="tarjeta" className="h-8 w-8 text-fuchsia-500" />
         <span className="font-bold text-white uppercase leading-tight">
           Hola {primerNombre || 'cliente'}!
         </span>
