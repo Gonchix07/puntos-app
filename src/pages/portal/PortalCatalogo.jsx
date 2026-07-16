@@ -39,7 +39,7 @@ export default function PortalCatalogo() {
 
   if (!datos) return <p className="text-slate-500">Cargando…</p>
 
-  const { premios, solicitudes, tarjeta } = datos
+  const { premios, solicitudes, tarjeta, saldos = [] } = datos
   const disponibles = Number(tarjeta?.puntos_remanentes ?? 0)
 
   async function canjear(premio) {
@@ -67,7 +67,15 @@ export default function PortalCatalogo() {
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h1 className="text-2xl font-bold text-slate-800">Catálogo de premios</h1>
-        <Badge color="amber">⭐ Tenés {puntos(disponibles)} puntos disponibles</Badge>
+        {/* Puntos disponibles desglosados por comercio */}
+        <div className="flex flex-wrap items-center gap-2">
+          {saldos.map((s) => (
+            <Badge key={s.comercio_id} color="amber">
+              🏬 {s.comercio_nombre}: ⭐ {puntos(s.remanente)}
+            </Badge>
+          ))}
+          <Badge color="indigo">Total disponible: ⭐ {puntos(disponibles)}</Badge>
+        </div>
       </div>
 
       {msg && (

@@ -1,6 +1,6 @@
 // Wordmark "Programa de Puntos" del portal de clientes.
 // Estilo logo: palabra fina en mayúsculas espaciadas arriba y la palabra
-// fuerte abajo en negrita itálica, rematada con el cuadrado fucsia.
+// fuerte abajo en negrita itálica.
 export default function MarcaPuntos({ chica = false, className = '' }) {
   return (
     <div className={`leading-none select-none ${className}`}>
@@ -12,7 +12,7 @@ export default function MarcaPuntos({ chica = false, className = '' }) {
         Programa&nbsp;de
       </div>
       <div className={`font-black italic tracking-tight ${chica ? 'text-xl' : 'text-3xl'}`}>
-        Puntos<span className="not-italic text-fuchsia-400">■</span>
+        Puntos
       </div>
     </div>
   )
