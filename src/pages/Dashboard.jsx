@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { Card, Stat, Badge, Select, money, puntos, formatTarjeta } from '../components/ui'
+import GraficoLinea from '../components/GraficoLinea'
 
 const PERIODOS = [
   { label: 'Últimos 7 días', dias: 7 },
@@ -297,19 +298,7 @@ export default function Dashboard() {
           {v.porMes.length === 0 ? (
             <p className="text-sm text-slate-400">No hay cargas en el período elegido.</p>
           ) : (
-            <div className="flex items-end gap-3 h-48">
-              {v.porMes.map((b) => (
-                <div key={b.etiqueta} className="flex-1 flex flex-col items-center justify-end gap-2">
-                  <span className="text-xs font-semibold text-slate-600">{puntos(b.valor)}</span>
-                  <div
-                    className="w-full bg-indigo-500 rounded-t-md transition-all"
-                    style={{ height: `${Math.max(4, b.pct)}%` }}
-                    title={`${b.etiqueta}: ${puntos(b.valor)} puntos`}
-                  />
-                  <span className="text-xs text-slate-400 capitalize">{b.etiqueta}</span>
-                </div>
-              ))}
-            </div>
+            <GraficoLinea datos={v.porMes} />
           )}
         </Card>
 
