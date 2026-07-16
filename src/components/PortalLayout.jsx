@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { NavLink, Navigate, Outlet, useNavigate } from 'react-router-dom'
 import { usePortal } from '../contexts/PortalAuthContext'
 import { puntos } from './ui'
+import MarcaPuntos from './MarcaPuntos'
 
 // Layout del portal de clientes: sidebar oscura a la izquierda + barra
 // superior con degradado violeta (estética "shopping premium").
@@ -140,12 +141,7 @@ export default function PortalLayout() {
               >
                 ☰
               </button>
-              <div className="leading-tight">
-                <div className="text-[10px] uppercase tracking-widest text-fuchsia-200">Programa</div>
-                <div className="text-xl font-extrabold">
-                  de Puntos<span className="text-fuchsia-300">■</span>
-                </div>
-              </div>
+              <MarcaPuntos />
             </div>
             <div className="flex items-center gap-2 text-sm">
               <span className="hidden sm:inline">{nombre || datos?.cliente?.nombre}</span>

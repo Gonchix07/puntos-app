@@ -1,5 +1,6 @@
 import { useOutletContext } from 'react-router-dom'
 import { Card, Badge, puntos, formatTarjeta } from '../../components/ui'
+import MarcaPuntos from '../../components/MarcaPuntos'
 
 // Tarjeta virtual del cliente: representación visual estilo tarjeta física.
 export default function PortalTarjeta() {
@@ -20,15 +21,9 @@ export default function PortalTarjeta() {
           <div className="absolute -bottom-24 -left-10 h-56 w-56 rounded-full bg-white/5" />
 
           <div className="flex items-start justify-between relative">
-            <div className="leading-tight">
-              <div className="text-[10px] uppercase tracking-widest text-fuchsia-200">Programa</div>
-              <div className="text-lg font-extrabold">de Puntos</div>
-            </div>
+            <MarcaPuntos chica />
             <span className="text-3xl">🎁</span>
           </div>
-
-          {/* Chip */}
-          <div className="relative h-8 w-11 rounded-md bg-gradient-to-br from-amber-200 to-amber-400 border border-amber-500/50" />
 
           <div className="relative space-y-3">
             <div className="font-mono text-xl sm:text-2xl tracking-widest drop-shadow">
