@@ -34,7 +34,7 @@ puntos-app/
 │   │   ├── CargarPuntos.jsx     # Carga manual por factura (comercio + nº + $)
 │   │   ├── Premios.jsx          # Catálogo e-commerce + alta (admin) + solicitar canje
 │   │   ├── SolicitudesPremios.jsx # Flujo de estados de las solicitudes de canje
-│   │   ├── Auditoria.jsx        # Movimientos (cargas + canjes) total/por cliente/por comercio + Excel
+│   │   ├── Auditoria.jsx        # Movimientos (cargas + canjes + estados de solicitudes) + Excel; arranca en últimos 30 días
 │   │   ├── Configuracion.jsx    # $/punto + tope de importe por factura (admin)
 │   │   ├── Comercios.jsx        # ABM de comercios + logo (admin)
 │   │   ├── Usuarios.jsx         # ABM usuarios (admin)
@@ -187,5 +187,6 @@ migration_comercio_logo.sql      # logo_url + bucket comercios
 migration_cliente_web.sql        # tilde "Cliente Web" en clientes
 migration_codigo_interno.sql     # código cliente interno (5 alfanuméricos, opcional)
 migration_usuarios_web.sql       # portal de clientes: tabla usuarios_web
+migration_solicitudes_historial.sql # historial de estados de solicitudes (trigger) para Auditoría
 ```
 > Nota: `schema.sql` ya refleja el estado final; las migraciones son para bases creadas antes de cada cambio.

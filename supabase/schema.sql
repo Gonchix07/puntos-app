@@ -617,6 +617,62 @@ drop policy if exists "solicitudes select" on public.solicitudes;
 create policy "solicitudes select" on public.solicitudes
   for select to authenticated using (true);
 
+-- ---------- Historial de estados de solicitudes ----------
+-- Cada paso del flujo (creada/pendiente, revisión, confirmado, entregado,
+-- rechazada) queda registrado por trigger y se muestra en Auditoría.
+create table if not exists public.solicitudes_historial (
+  id uuid primary key default gen_random_uuid(),
+  solicitud_id uuid not null references public.solicitudes(id) on delete cascade,
+  cliente_id uuid,
+  cliente_nombre text,
+  numero_tarjeta text,
+  premio_titulo text,
+  comercio_id uuid,
+  comercio_nombre text,
+  puntos numeric(14,2),
+  estado_anterior text,
+  estado_nuevo text not null,
+  usuario_email text,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_sol_hist_fecha on public.solicitudes_historial(created_at);
+create index if not exists idx_sol_hist_cliente on public.solicitudes_historial(cliente_id);
+
+alter table public.solicitudes_historial enable row level security;
+drop policy if exists "sol_historial select" on public.solicitudes_historial;
+create policy "sol_historial select" on public.solicitudes_historial
+  for select to authenticated using (true);
+
+create or replace function public.log_estado_solicitud()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if tg_op = 'INSERT' then
+    insert into public.solicitudes_historial
+      (solicitud_id, cliente_id, cliente_nombre, numero_tarjeta, premio_titulo,
+       comercio_id, comercio_nombre, puntos, estado_anterior, estado_nuevo, usuario_email)
+    values
+      (new.id, new.cliente_id, new.cliente_nombre, new.numero_tarjeta, new.premio_titulo,
+       new.comercio_id, new.comercio_nombre, new.puntos, null, new.estado, new.solicitado_por);
+  elsif tg_op = 'UPDATE' and new.estado is distinct from old.estado then
+    insert into public.solicitudes_historial
+      (solicitud_id, cliente_id, cliente_nombre, numero_tarjeta, premio_titulo,
+       comercio_id, comercio_nombre, puntos, estado_anterior, estado_nuevo, usuario_email)
+    values
+      (new.id, new.cliente_id, new.cliente_nombre, new.numero_tarjeta, new.premio_titulo,
+       new.comercio_id, new.comercio_nombre, new.puntos, old.estado, new.estado, new.actualizado_por);
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_log_estado_solicitud on public.solicitudes;
+create trigger trg_log_estado_solicitud
+  after insert or update on public.solicitudes
+  for each row execute procedure public.log_estado_solicitud();
+
 create or replace function public.crear_solicitud(
   p_cliente_id uuid,
   p_premio_id uuid,

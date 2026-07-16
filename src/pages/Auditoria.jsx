@@ -4,6 +4,15 @@ import * as XLSX from 'xlsx'
 import { supabase } from '../supabaseClient'
 import { Button, Card, Select, Badge, money, puntos } from '../components/ui'
 
+// Etiqueta y color de cada paso del flujo de solicitudes
+const ESTADOS_SOLICITUD = {
+  pendiente: { label: 'Solicitud creada', color: 'amber' },
+  revision: { label: 'A revisión', color: 'sky' },
+  confirmado: { label: 'Canje confirmado', color: 'indigo' },
+  entregado: { label: 'Premio entregado', color: 'green' },
+  rechazada: { label: 'Rechazada', color: 'red' },
+}
+
 // Mismo período inicial que el Dashboard: últimos 30 días
 function hace30Dias() {
   const d = new Date()
@@ -17,6 +26,7 @@ export default function Auditoria() {
   const [searchParams] = useSearchParams()
   const [cargas, setCargas] = useState([])
   const [canjes, setCanjes] = useState([])
+  const [historial, setHistorial] = useState([])
   const [clientes, setClientes] = useState([])
   const [comercios, setComercios] = useState([])
   const [loading, setLoading] = useState(true)
@@ -29,14 +39,17 @@ export default function Auditoria() {
 
   useEffect(() => {
     ;(async () => {
-      const [{ data: cargData }, { data: canjData }, { data: cData }, { data: coData }] = await Promise.all([
-        supabase.from('cargas').select('*').order('created_at', { ascending: false }),
-        supabase.from('canjes').select('*').order('created_at', { ascending: false }),
-        supabase.from('clientes').select('id, nombre, dni').order('nombre'),
-        supabase.from('comercios').select('id, nombre, logo_url').order('nombre'),
-      ])
+      const [{ data: cargData }, { data: canjData }, { data: histData }, { data: cData }, { data: coData }] =
+        await Promise.all([
+          supabase.from('cargas').select('*').order('created_at', { ascending: false }),
+          supabase.from('canjes').select('*').order('created_at', { ascending: false }),
+          supabase.from('solicitudes_historial').select('*').order('created_at', { ascending: false }),
+          supabase.from('clientes').select('id, nombre, dni').order('nombre'),
+          supabase.from('comercios').select('id, nombre, logo_url').order('nombre'),
+        ])
       setCargas(cargData || [])
       setCanjes(canjData || [])
+      setHistorial(histData || [])
       setClientes(cData || [])
       setComercios(coData || [])
       setLoading(false)
@@ -75,8 +88,25 @@ export default function Auditoria() {
       origen: null,
       usuario_email: k.usuario_email,
     }))
-    return [...cs, ...js].sort((a, b) => new Date(b.fecha) - new Date(a.fecha))
-  }, [cargas, canjes])
+    // Pasos del flujo de solicitudes (no mueven puntos: el descuento real es el canje)
+    const hs = (historial || []).map((h) => ({
+      id: 'estado-' + h.id,
+      tipo: 'estado',
+      estado: h.estado_nuevo,
+      fecha: h.created_at,
+      cliente_id: h.cliente_id,
+      cliente_nombre: h.cliente_nombre,
+      numero_tarjeta: h.numero_tarjeta,
+      comercio_id: h.comercio_id,
+      comercio_nombre: h.comercio_nombre || (h.comercio_id ? null : 'General'),
+      detalle: `Premio: ${h.premio_titulo || '—'} (${puntos(h.puntos)} pts)`,
+      importe: null,
+      puntos: null,
+      origen: null,
+      usuario_email: h.usuario_email,
+    }))
+    return [...cs, ...js, ...hs].sort((a, b) => new Date(b.fecha) - new Date(a.fecha))
+  }, [cargas, canjes, historial])
 
   const logoPorComercio = useMemo(() => {
     const m = new Map()
@@ -109,13 +139,18 @@ export default function Auditoria() {
   function exportar() {
     const filas = filtrados.map((m) => ({
       Fecha: new Date(m.fecha).toLocaleString('es-AR'),
-      Tipo: m.tipo === 'carga' ? 'Carga de puntos' : 'Canje de premio',
+      Tipo:
+        m.tipo === 'carga'
+          ? 'Carga de puntos'
+          : m.tipo === 'canje'
+            ? 'Canje de premio'
+            : `Solicitud: ${ESTADOS_SOLICITUD[m.estado]?.label || m.estado}`,
       Cliente: m.cliente_nombre || '',
       Tarjeta: m.numero_tarjeta || '',
       Comercio: m.comercio_nombre || '',
       Detalle: m.detalle,
       Importe: m.importe != null ? m.importe : '',
-      Puntos: m.puntos, // con signo: + carga, - canje
+      Puntos: m.puntos != null ? m.puntos : '', // con signo: + carga, - canje; vacío en estados
       Origen: m.origen || '',
       Usuario: m.usuario_email || '',
     }))
@@ -166,12 +201,13 @@ export default function Auditoria() {
             <option value="">Todos</option>
             <option value="carga">Cargas de puntos</option>
             <option value="canje">Canjes de premios</option>
+            <option value="estado">Estados de solicitudes</option>
           </Select>
           <Select
             label="Origen (cargas)"
             value={origen}
             onChange={(e) => setOrigen(e.target.value)}
-            disabled={tipo === 'canje'}
+            disabled={tipo === 'canje' || tipo === 'estado'}
           >
             <option value="">Todos</option>
             <option value="manual">Manual</option>
@@ -253,8 +289,12 @@ export default function Auditoria() {
                           <Badge color="sky">Carga</Badge>
                           {m.origen && <span className="text-xs text-slate-400">{m.origen}</span>}
                         </span>
-                      ) : (
+                      ) : m.tipo === 'canje' ? (
                         <Badge color="indigo">Canje</Badge>
+                      ) : (
+                        <Badge color={ESTADOS_SOLICITUD[m.estado]?.color || 'slate'}>
+                          {ESTADOS_SOLICITUD[m.estado]?.label || m.estado}
+                        </Badge>
                       )}
                     </td>
                     <td className="py-2 pr-3" data-label="Cliente">
@@ -266,12 +306,16 @@ export default function Auditoria() {
                     <td className="py-2 pr-3" data-label="Comercio">
                       {m.comercio_nombre ? (
                         <span className="inline-flex items-center gap-1.5">
-                          {m.comercio_id && logoPorComercio.get(m.comercio_id) && (
-                            <img
-                              src={logoPorComercio.get(m.comercio_id)}
-                              alt=""
-                              className="h-5 w-5 rounded-sm object-contain"
-                            />
+                          {m.comercio_id ? (
+                            logoPorComercio.get(m.comercio_id) && (
+                              <img
+                                src={logoPorComercio.get(m.comercio_id)}
+                                alt=""
+                                className="h-5 w-5 rounded-sm object-contain"
+                              />
+                            )
+                          ) : (
+                            <span title="Canje general (todos los comercios)">🌐</span>
                           )}
                           {m.comercio_nombre}
                         </span>
@@ -287,12 +331,11 @@ export default function Auditoria() {
                     </td>
                     <td
                       className={`py-2 pr-3 text-right font-semibold ${
-                        m.puntos >= 0 ? 'text-green-600' : 'text-red-600'
+                        m.puntos == null ? 'text-slate-400' : m.puntos >= 0 ? 'text-green-600' : 'text-red-600'
                       }`}
                       data-label="Puntos"
                     >
-                      {m.puntos >= 0 ? '+' : '−'}
-                      {puntos(Math.abs(m.puntos))}
+                      {m.puntos == null ? '—' : `${m.puntos >= 0 ? '+' : '−'}${puntos(Math.abs(m.puntos))}`}
                     </td>
                     <td className="py-2 pr-3 text-slate-500 text-xs" data-label="Usuario">
                       {m.usuario_email || '—'}
