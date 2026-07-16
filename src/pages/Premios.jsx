@@ -6,6 +6,12 @@ import ClienteCombo from '../components/ClienteCombo'
 
 const VACIO = { titulo: '', descripcion: '', foto_url: '', puntos_necesarios: '', stock: '', comercio_id: '', activo: true }
 
+// Motivos válidos para justificar cada tipo de ajuste de stock
+const MOTIVOS_STOCK = {
+  ingreso: ['Compra / reposición', 'Devolución de cliente', 'Corrección de inventario', 'Otro'],
+  egreso: ['Rotura / daño', 'Vencimiento', 'Pérdida / extravío', 'Corrección de inventario', 'Otro'],
+}
+
 // Solo dígitos + separador de miles es-AR ("80000" -> "80.000") mientras se escribe
 function soloDigitos(v) {
   return String(v).replace(/\D/g, '')
@@ -50,6 +56,14 @@ export default function Premios() {
   const [guardando, setGuardando] = useState(false)
   const [subiendo, setSubiendo] = useState(false)
   const fileRef = useRef(null)
+
+  // Modal de stock (ajustes por movimientos)
+  const [stockPremio, setStockPremio] = useState(null)
+  const [stockMovs, setStockMovs] = useState([])
+  const [stockMovsLoading, setStockMovsLoading] = useState(false)
+  const [ajuste, setAjuste] = useState({ tipo: 'ingreso', cantidad: '', motivo: '' })
+  const [ajustando, setAjustando] = useState(false)
+  const [stockMsg, setStockMsg] = useState(null)
 
   // Modal de canje
   const [canjePremio, setCanjePremio] = useState(null)
@@ -156,7 +170,7 @@ export default function Premios() {
       setMsg({ tipo: 'error', texto: 'Los puntos necesarios deben ser mayores a cero.' })
       return
     }
-    if (!(stk >= 0) || !Number.isInteger(stk)) {
+    if (!editId && (!(stk >= 0) || !Number.isInteger(stk))) {
       setMsg({ tipo: 'error', texto: 'El stock debe ser un número entero mayor o igual a cero.' })
       return
     }
@@ -166,10 +180,11 @@ export default function Premios() {
       descripcion: form.descripcion.trim() || null,
       foto_url: form.foto_url.trim() || null,
       puntos_necesarios: pts,
-      stock: stk,
       comercio_id: form.comercio_id || null,
       activo: form.activo,
     }
+    // El stock inicial solo se define en el alta; después se ajusta por movimientos (📦 Stock)
+    if (!editId) payload.stock = stk
     const { error } = editId
       ? await supabase.from('premios').update(payload).eq('id', editId)
       : await supabase.from('premios').insert(payload)
@@ -191,6 +206,60 @@ export default function Premios() {
       return
     }
     setMsg({ tipo: 'ok', texto: 'Premio eliminado.' })
+    cargar()
+  }
+
+  // ---------- Stock por movimientos ----------
+  function abrirStock(p) {
+    setStockPremio(p)
+    setAjuste({ tipo: 'ingreso', cantidad: '', motivo: '' })
+    setStockMsg(null)
+    cargarStockMovs(p.id)
+  }
+  function cerrarStock() {
+    setStockPremio(null)
+    setStockMovs([])
+    setStockMsg(null)
+  }
+  async function cargarStockMovs(premioId) {
+    setStockMovsLoading(true)
+    const { data } = await supabase
+      .from('premio_stock_mov')
+      .select('*')
+      .eq('premio_id', premioId)
+      .order('created_at', { ascending: false })
+    setStockMovs(data || [])
+    setStockMovsLoading(false)
+  }
+  async function registrarAjuste(e) {
+    e.preventDefault()
+    setStockMsg(null)
+    const cant = Number(ajuste.cantidad)
+    if (!(cant > 0) || !Number.isInteger(cant)) {
+      setStockMsg({ tipo: 'error', texto: 'La cantidad debe ser un entero mayor a cero.' })
+      return
+    }
+    if (!ajuste.motivo) {
+      setStockMsg({ tipo: 'error', texto: 'Elegí el motivo del ajuste.' })
+      return
+    }
+    setAjustando(true)
+    const { data, error } = await supabase.rpc('ajustar_stock_premio', {
+      p_premio_id: stockPremio.id,
+      p_tipo: ajuste.tipo,
+      p_cantidad: cant,
+      p_motivo: ajuste.motivo,
+      p_usuario_email: profile?.email,
+    })
+    setAjustando(false)
+    if (error) {
+      setStockMsg({ tipo: 'error', texto: error.message })
+      return
+    }
+    setStockMsg({ tipo: 'ok', texto: `Movimiento registrado. Stock actual: ${data.stock} unidad(es).` })
+    setAjuste((a) => ({ ...a, cantidad: '', motivo: '' }))
+    setStockPremio((p) => ({ ...p, stock: data.stock }))
+    cargarStockMovs(stockPremio.id)
     cargar()
   }
 
@@ -316,13 +385,15 @@ export default function Premios() {
                   required
                 />
                 <Input
-                  label="Stock"
+                  label={editId ? 'Stock (solo por movimientos)' : 'Stock inicial'}
                   type="number"
                   min="0"
                   step="1"
                   value={form.stock}
                   onChange={(e) => setForm((f) => ({ ...f, stock: e.target.value }))}
-                  required
+                  required={!editId}
+                  disabled={!!editId}
+                  title={editId ? 'El stock solo se ajusta desde 📦 Stock, con ingresos/egresos justificados' : undefined}
                 />
               </div>
               <Select
@@ -458,6 +529,14 @@ export default function Premios() {
                         <Button
                           variant="ghost"
                           className="px-2 text-white bg-white/10 hover:bg-white/20"
+                          onClick={() => abrirStock(p)}
+                          title="Stock (ajustes por movimientos)"
+                        >
+                          📦
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          className="px-2 text-white bg-white/10 hover:bg-white/20"
                           onClick={() => editar(p)}
                           title="Editar"
                         >
@@ -478,6 +557,130 @@ export default function Premios() {
               </Card>
             )
           })}
+        </div>
+      )}
+
+      {/* Modal de stock: ajustes por movimientos justificados */}
+      {stockPremio && (
+        <div className="fixed inset-0 z-40 bg-black/40 grid place-items-center px-4" onClick={cerrarStock}>
+          <div
+            className="bg-white rounded-xl shadow-xl w-full max-w-2xl p-5 space-y-4 max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="font-bold text-lg text-slate-800">📦 Stock — {stockPremio.titulo}</h2>
+                <p className="text-sm text-slate-500">
+                  El stock solo cambia por movimientos: ajustes justificados y canjes.
+                </p>
+              </div>
+              <Badge color={stockPremio.stock > 0 ? 'green' : 'red'}>
+                Stock actual: {stockPremio.stock}
+              </Badge>
+            </div>
+
+            <form onSubmit={registrarAjuste} className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
+              <Select
+                label="Movimiento"
+                value={ajuste.tipo}
+                onChange={(e) => setAjuste((a) => ({ ...a, tipo: e.target.value, motivo: '' }))}
+              >
+                <option value="ingreso">➕ Ingreso</option>
+                <option value="egreso">➖ Egreso</option>
+              </Select>
+              <Input
+                label="Cantidad"
+                type="number"
+                min="1"
+                step="1"
+                value={ajuste.cantidad}
+                onChange={(e) => setAjuste((a) => ({ ...a, cantidad: e.target.value }))}
+                required
+              />
+              <Select
+                label="Motivo"
+                value={ajuste.motivo}
+                onChange={(e) => setAjuste((a) => ({ ...a, motivo: e.target.value }))}
+                required
+              >
+                <option value="">Elegí un motivo…</option>
+                {MOTIVOS_STOCK[ajuste.tipo].map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </Select>
+              <Button type="submit" disabled={ajustando}>
+                {ajustando ? 'Registrando…' : 'Registrar'}
+              </Button>
+            </form>
+
+            {stockMsg && (
+              <p className={`text-sm ${stockMsg.tipo === 'ok' ? 'text-green-600' : 'text-red-600'}`}>
+                {stockMsg.texto}
+              </p>
+            )}
+
+            <div>
+              <h3 className="font-semibold text-slate-700 text-sm mb-2">Movimientos</h3>
+              {stockMovsLoading ? (
+                <p className="text-sm text-slate-400">Cargando…</p>
+              ) : stockMovs.length === 0 ? (
+                <p className="text-sm text-slate-400">
+                  Sin movimientos registrados (los premios creados antes del control de stock arrancan con su
+                  saldo al migrar).
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-slate-500 border-b border-slate-200">
+                        <th className="py-2 pr-3">Fecha</th>
+                        <th className="py-2 pr-3">Tipo</th>
+                        <th className="py-2 pr-3 text-right">Cantidad</th>
+                        <th className="py-2 pr-3">Motivo</th>
+                        <th className="py-2 pr-3 text-right">Stock result.</th>
+                        <th className="py-2 pr-3">Usuario</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {stockMovs.map((mv) => (
+                        <tr key={mv.id} className="border-b border-slate-100">
+                          <td className="py-2 pr-3 whitespace-nowrap">
+                            {new Date(mv.created_at).toLocaleString('es-AR')}
+                          </td>
+                          <td className="py-2 pr-3">
+                            <Badge color={mv.tipo === 'ingreso' ? 'green' : 'red'}>
+                              {mv.tipo === 'ingreso' ? 'Ingreso' : 'Egreso'}
+                            </Badge>
+                          </td>
+                          <td
+                            className={`py-2 pr-3 text-right font-semibold ${
+                              mv.tipo === 'ingreso' ? 'text-green-600' : 'text-red-600'
+                            }`}
+                          >
+                            {mv.tipo === 'ingreso' ? '+' : '−'}
+                            {mv.cantidad}
+                          </td>
+                          <td className="py-2 pr-3">{mv.motivo}</td>
+                          <td className="py-2 pr-3 text-right font-semibold text-slate-700">
+                            {mv.stock_resultante}
+                          </td>
+                          <td className="py-2 pr-3 text-slate-500 text-xs">{mv.usuario_email || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end">
+              <Button variant="secondary" onClick={cerrarStock}>
+                Cerrar
+              </Button>
+            </div>
+          </div>
         </div>
       )}
 

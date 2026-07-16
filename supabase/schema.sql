@@ -432,6 +432,101 @@ group by m.cliente_id, m.comercio_id;
 -- saldos_cliente: se define su versión final (con pendientes) al pie del schema,
 -- después de crear la tabla public.solicitudes de la que depende.
 
+-- ---------- Movimientos de stock de premios ----------
+-- El stock inicial se registra al alta del premio (trigger) y después SOLO
+-- cambia por movimientos: ajustes justificados (ajustar_stock_premio) o canjes.
+create table if not exists public.premio_stock_mov (
+  id uuid primary key default gen_random_uuid(),
+  premio_id uuid not null references public.premios(id) on delete cascade,
+  premio_titulo text,
+  tipo text not null check (tipo in ('ingreso', 'egreso')),
+  cantidad integer not null check (cantidad > 0),
+  motivo text not null,
+  stock_resultante integer not null,
+  usuario_email text,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_stock_mov_premio on public.premio_stock_mov(premio_id, created_at);
+
+alter table public.premio_stock_mov enable row level security;
+drop policy if exists "stock_mov select" on public.premio_stock_mov;
+create policy "stock_mov select" on public.premio_stock_mov
+  for select to authenticated using (true);
+-- Sin política de insert: solo escriben las funciones security definer.
+
+create or replace function public.log_stock_inicial()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if new.stock > 0 then
+    insert into public.premio_stock_mov
+      (premio_id, premio_titulo, tipo, cantidad, motivo, stock_resultante, usuario_email)
+    values
+      (new.id, new.titulo, 'ingreso', new.stock, 'Stock inicial', new.stock,
+       (select email from public.profiles where id = auth.uid()));
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_log_stock_inicial on public.premios;
+create trigger trg_log_stock_inicial
+  after insert on public.premios
+  for each row execute procedure public.log_stock_inicial();
+
+create or replace function public.ajustar_stock_premio(
+  p_premio_id uuid,
+  p_tipo text,
+  p_cantidad integer,
+  p_motivo text,
+  p_usuario_email text default null
+)
+returns json
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_premio public.premios%rowtype;
+  v_nuevo integer;
+  v_email text;
+begin
+  if not public.is_admin() then
+    raise exception 'Solo un administrador puede ajustar el stock';
+  end if;
+  if p_tipo not in ('ingreso', 'egreso') then
+    raise exception 'Tipo de movimiento inválido (ingreso o egreso)';
+  end if;
+  if p_cantidad is null or p_cantidad <= 0 then
+    raise exception 'La cantidad debe ser un entero mayor a cero';
+  end if;
+  if coalesce(trim(p_motivo), '') = '' then
+    raise exception 'Indicá el motivo del ajuste';
+  end if;
+
+  select * into v_premio from public.premios where id = p_premio_id for update;
+  if not found then raise exception 'Premio no encontrado'; end if;
+
+  if p_tipo = 'egreso' and v_premio.stock < p_cantidad then
+    raise exception 'Stock insuficiente: hay % unidad(es) y querés egresar %', v_premio.stock, p_cantidad;
+  end if;
+
+  v_nuevo := v_premio.stock + case when p_tipo = 'ingreso' then p_cantidad else -p_cantidad end;
+  update public.premios set stock = v_nuevo where id = p_premio_id;
+
+  v_email := coalesce(p_usuario_email, (select email from public.profiles where id = auth.uid()));
+  insert into public.premio_stock_mov
+    (premio_id, premio_titulo, tipo, cantidad, motivo, stock_resultante, usuario_email)
+  values
+    (p_premio_id, v_premio.titulo, p_tipo, p_cantidad, trim(p_motivo), v_nuevo, v_email);
+
+  return json_build_object('premio', v_premio.titulo, 'stock', v_nuevo);
+end;
+$$;
+
+grant execute on function public.ajustar_stock_premio(uuid, text, integer, text, text) to authenticated;
+
 create or replace function public.canjear_premio(
   p_cliente_id uuid,
   p_premio_id uuid,
@@ -515,6 +610,12 @@ begin
 
   update public.tarjetas set puntos = puntos - v_costo where id = v_card.id;
   update public.premios set stock = stock - 1 where id = v_premio.id;
+
+  -- Movimiento de stock del canje
+  insert into public.premio_stock_mov
+    (premio_id, premio_titulo, tipo, cantidad, motivo, stock_resultante, usuario_email)
+  values
+    (v_premio.id, v_premio.titulo, 'egreso', 1, 'Canje de premio', v_premio.stock - 1, v_email);
 
   return json_build_object(
     'canje_id', v_canje.id,

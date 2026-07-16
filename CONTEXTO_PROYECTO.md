@@ -95,7 +95,8 @@ El saldo neto por comercio se calcula con la vista **`saldos_por_comercio`** = c
 - **config**: id=1, pesos_por_punto (default 1000), **max_factura_pesos** (default 9.999.999)
 - **comercios**: id, nombre (único), **logo_url**, activo
 - **cargas**: tarjeta_id, cliente_id, numero_tarjeta, cliente_nombre, **comercio_id**, **comercio_nombre**, factura_numero (**único** cuando no es null), factura_pesos, pesos_por_punto (snapshot), puntos, origen ('manual'|'api'), usuario_email, created_at
-- **premios**: titulo, descripcion, foto_url, puntos_necesarios, stock, **comercio_id** (null = general/para todos), activo
+- **premios**: titulo, descripcion, foto_url, puntos_necesarios, stock, **comercio_id** (null = general/para todos), activo. El **stock inicial se define en el alta y no se edita más**: solo cambia por movimientos.
+- **premio_stock_mov**: ledger de stock por premio (tipo ingreso/egreso, cantidad, **motivo**, stock_resultante, usuario). Lo alimentan: trigger de alta (`Stock inicial`), RPC **`ajustar_stock_premio`** (ajustes justificados por select de motivos, solo admin) y `canjear_premio` (`Canje de premio`). UI: botón 📦 en cada tarjeta de premio.
 - **canjes**: premio_id, premio_titulo, cliente_id, cliente_nombre, tarjeta_id, numero_tarjeta, puntos, **comercio_id/comercio_nombre** (del premio; null = general), usuario_email
 - **canje_detalle**: canje_id, comercio_id, puntos — de qué comercio(s) salieron los puntos (reparto de canjes generales)
 - **solicitudes**: premio/cliente/tarjeta/comercio (snapshots), puntos, **estado** ('pendiente'|'revision'|'confirmado'|'entregado'|'rechazada'), canje_id, solicitado_por, actualizado_por, created_at, updated_at
@@ -188,5 +189,6 @@ migration_cliente_web.sql        # tilde "Cliente Web" en clientes
 migration_codigo_interno.sql     # código cliente interno (5 alfanuméricos, opcional)
 migration_usuarios_web.sql       # portal de clientes: tabla usuarios_web
 migration_solicitudes_historial.sql # historial de estados de solicitudes (trigger) para Auditoría
+migration_stock_premios.sql      # stock de premios por movimientos (ajustes justificados + canjes)
 ```
 > Nota: `schema.sql` ya refleja el estado final; las migraciones son para bases creadas antes de cada cambio.
