@@ -1,5 +1,12 @@
 // POST /api/cargar-puntos — carga puntos a una tarjeta desde un sistema externo.
-// Requiere Authorization: Bearer <access_token> de un usuario admin.
+//
+// Autenticación (dos modos):
+//   - Header X-Api-Key: <API_INTEGRATION_KEY>  → integraciones servidor-a-servidor (ej.
+//     pos-mayorista). Secreto fijo configurado en la env var API_INTEGRATION_KEY, sin expirar
+//     — pensado justamente para esto, a diferencia de un access_token de sesión.
+//   - Authorization: Bearer <access_token> de un usuario admin → uso interactivo/manual (Postman,
+//     un script a mano). El access_token de Supabase Auth expira (por defecto a la hora), así que
+//     NO es apto para una integración recurrente.
 //
 // Body JSON (identificar la tarjeta por número O por DNI del cliente):
 //   numero          string  número de tarjeta de 16 dígitos (acepta espacios)
@@ -12,12 +19,29 @@
 //                  puntos_otorgados, puntos_totales }
 
 import { createClient } from '@supabase/supabase-js'
+import { timingSafeEqual } from 'crypto'
 
 const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
 const anonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+const integrationKey = process.env.API_INTEGRATION_KEY
+
+// Comparación a tiempo constante para no filtrar el secreto por timing — mismo largo siempre
+// (rellena/trunca antes de comparar) para que Buffer.compare no tire por longitudes distintas.
+function apiKeyValida(recibida) {
+  if (!integrationKey || !recibida) return false
+  const a = Buffer.from(String(recibida))
+  const b = Buffer.from(integrationKey)
+  if (a.length !== b.length) return false
+  return timingSafeEqual(a, b)
+}
 
 async function getAdmin(req) {
+  const apiKey = req.headers['x-api-key']
+  if (apiKeyValida(apiKey)) {
+    return { admin: createClient(url, serviceKey), callerEmail: 'api-integracion' }
+  }
+
   const token = (req.headers.authorization || '').replace('Bearer ', '').trim()
   if (!token) return null
   const anon = createClient(url, anonKey)
@@ -38,7 +62,7 @@ export default async function handler(req, res) {
   }
 
   const ctx = await getAdmin(req)
-  if (!ctx) return res.status(403).json({ error: 'No autorizado (se requiere un usuario administrador).' })
+  if (!ctx) return res.status(403).json({ error: 'No autorizado (se requiere X-Api-Key válida o un usuario administrador).' })
   const { admin, callerEmail } = ctx
 
   const { numero, dni, factura_pesos, factura_numero, comercio, comercio_id } = req.body || {}

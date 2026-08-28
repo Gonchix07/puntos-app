@@ -143,12 +143,16 @@ Secuencia `tarjeta_numero_seq` desde **10000100**, formateada a 16 díg. con `lp
 ---
 
 ## API REST (Vercel /api/)
-Requieren `Authorization: Bearer <access_token>` de un **admin** y `SUPABASE_SERVICE_ROLE_KEY` en el servidor.
+Requieren `SUPABASE_SERVICE_ROLE_KEY` en el servidor y uno de estos dos modos de auth:
+- **`X-Api-Key: <API_INTEGRATION_KEY>`** — para integraciones servidor-a-servidor (ej. pos-mayorista). Secreto fijo (env var `API_INTEGRATION_KEY`), no expira. Es el modo recomendado para cualquier sistema externo que llame seguido.
+- **`Authorization: Bearer <access_token>`** de un usuario **admin** — pensado para uso manual/interactivo (Postman, un script a mano). El `access_token` de Supabase Auth **expira** (por defecto a la hora) — no usar para una integración recurrente.
+
+Solo **POST /api/cargar-puntos** acepta los dos modos (`getAdmin` en `api/cargar-puntos.js` prueba primero `X-Api-Key`, si no coincide cae al Bearer). El resto de los endpoints (`clientes`, `admin-users`) todavía exigen Bearer admin.
 - **POST /api/clientes** — crea cliente (y tarjeta). Body: `nombre*`, `dni*`, `email`, `telefono`.
-- **POST /api/cargar-puntos** — carga puntos. Body: `factura_pesos*`, `comercio*` (nombre) o `comercio_id`, `factura_numero`, y (`numero` | `dni`). `origen = 'api'`.
+- **POST /api/cargar-puntos** — carga puntos. Body: `factura_pesos*`, `comercio*` (nombre) o `comercio_id`, `factura_numero`, y (`numero` | `dni`). `origen = 'api'` (o el que mande el caller).
 - **POST/PATCH/DELETE /api/admin-users** — ABM de usuarios de Auth.
 
-#### Bearer token desde un sistema externo
+#### Bearer token desde un sistema externo (uso manual, no recomendado para integraciones)
 ```http
 POST https://TU-PROYECTO.supabase.co/auth/v1/token?grant_type=password
 apikey: <anon-key>
@@ -161,7 +165,7 @@ Content-Type: application/json
 
 ## Variables de entorno
 - **Local (`.env`)**: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
-- **Vercel (además)**: `SUPABASE_SERVICE_ROLE_KEY`
+- **Vercel (además)**: `SUPABASE_SERVICE_ROLE_KEY`, `API_INTEGRATION_KEY` (secreto fijo para integraciones externas vía `X-Api-Key`, ver POST /api/cargar-puntos — generarlo con algo como `openssl rand -hex 32`)
 - **Portal de clientes (Vercel)**: `PORTAL_TOKEN_SECRET`, `PORTAL_URL`, `BREVO_API_KEY`, `BREVO_FROM_EMAIL`, `BREVO_FROM_NAME` (opcional)
 
 ⚠️ La `VITE_SUPABASE_URL` usa el **ref** del proyecto (subdominio aleatorio, ej. `https://xxxx.supabase.co`), no el nombre del proyecto.
