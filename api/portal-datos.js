@@ -1,7 +1,7 @@
 // /api/portal-datos — datos del portal de clientes.
 // Requiere Authorization: Bearer <token del portal> (emitido por /api/portal-auth).
 //
-//   GET  → { cliente, tarjeta, saldos, premios, solicitudes, cargas, canjes }
+//   GET  → { cliente, tarjeta, saldos, premios, solicitudes, cargas, canjes, comercios, campanias }
 //   POST { action: 'canjear', premio_id } → crea la solicitud de canje (RPC crear_solicitud)
 
 import { getSesionPortal } from './_portal.js'
@@ -14,7 +14,7 @@ export default async function handler(req, res) {
   const { admin, cliente, usuarioWeb } = sesion
 
   if (req.method === 'GET') {
-    const [tarjetaQ, saldosQ, premiosQ, solicitudesQ, cargasQ, canjesQ, comerciosQ] = await Promise.all([
+    const [tarjetaQ, saldosQ, premiosQ, solicitudesQ, cargasQ, canjesQ, comerciosQ, campaniasQ] = await Promise.all([
       admin
         .from('tarjetas')
         .select('numero, puntos, puntos_remanentes, activa')
@@ -43,7 +43,18 @@ export default async function handler(req, res) {
         .eq('cliente_id', cliente.id)
         .order('created_at', { ascending: false }),
       admin.from('comercios').select('id, nombre, logo_url').order('nombre'),
+      admin.rpc('campanias_vigentes_cliente', { p_cliente_id: cliente.id }),
     ])
+
+    const campanias = (campaniasQ.data || []).map((c) => ({
+      id: c.campania_id,
+      nombre: c.nombre,
+      descripcion: c.descripcion,
+      descuento_porcentaje: Number(c.descuento_porcentaje),
+      local: c.local_id ? c.local_nombre : null, // null = General (todos los locales)
+      fecha_desde: c.fecha_desde,
+      fecha_hasta: c.fecha_hasta,
+    }))
 
     return res.status(200).json({
       cliente: {
@@ -59,6 +70,7 @@ export default async function handler(req, res) {
       cargas: cargasQ.data || [],
       canjes: canjesQ.data || [],
       comercios: comerciosQ.data || [],
+      campanias,
     })
   }
 

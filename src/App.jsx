@@ -7,6 +7,7 @@ import PortalLayout from './components/PortalLayout'
 import PortalLogin from './pages/portal/PortalLogin'
 import PortalInicio from './pages/portal/PortalInicio'
 import PortalCatalogo from './pages/portal/PortalCatalogo'
+import PortalBeneficios from './pages/portal/PortalBeneficios'
 import PortalTarjeta from './pages/portal/PortalTarjeta'
 import PortalCuenta from './pages/portal/PortalCuenta'
 import Dashboard from './pages/Dashboard'
@@ -65,6 +66,7 @@ export default function App() {
         <Route path="/portal" element={<PortalLayout />}>
           <Route index element={<PortalInicio />} />
           <Route path="catalogo" element={<PortalCatalogo />} />
+          <Route path="beneficios" element={<PortalBeneficios />} />
           <Route path="tarjeta" element={<PortalTarjeta />} />
           <Route path="cuenta" element={<PortalCuenta />} />
         </Route>

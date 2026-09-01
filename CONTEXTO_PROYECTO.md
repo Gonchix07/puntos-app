@@ -47,6 +47,7 @@ puntos-app/
 │   │       ├── PortalLogin.jsx      # Login + crear cuenta + olvido + reset (?reset=TOKEN)
 │   │       ├── PortalInicio.jsx     # Stats, gráfico por mes, donut y detalle por comercio
 │   │       ├── PortalCatalogo.jsx   # Catálogo de premios + canjear + mis solicitudes
+│   │       ├── PortalBeneficios.jsx # Campañas vigentes del cliente, como cuadros (% descuento)
 │   │       ├── PortalTarjeta.jsx    # Tarjeta virtual
 │   │       └── PortalCuenta.jsx     # Datos personales + cambio de contraseña
 │   ├── App.jsx / main.jsx / supabaseClient.js / index.css
@@ -79,7 +80,7 @@ Badge: admin=amber (👑), operador=sky (🧑‍💼).
 - **Registro**: el cliente crea su cuenta con DNI + email (deben coincidir con su ficha) + contraseña (mín. 8).
 - **Sesión**: token HMAC-SHA256 (7 días) firmado con `PORTAL_TOKEN_SECRET`, guardado en localStorage (`portal_token`). Cada request valida en DB que la cuenta, el cliente y el tilde sigan activos.
 - **Olvido de contraseña**: mail por **Brevo** (`BREVO_API_KEY`, `BREVO_FROM_EMAIL`, `BREVO_FROM_NAME`, `PORTAL_URL`) con link `/portal/login?reset=TOKEN` (vence en 1 h; en DB solo se guarda el hash SHA-256 del token).
-- **Páginas**: Inicio (stats con borde fucsia, gráfico SVG de puntos por mes, donut por comercio, detalle por comercio, últimos movimientos), Catálogo (canjear → RPC `crear_solicitud` + "Mis canjes" con estados), Tarjeta Virtual, Mi cuenta (cambio de contraseña).
+- **Páginas**: Inicio (stats con borde fucsia, gráfico SVG de puntos por mes, donut por comercio, detalle por comercio, últimos movimientos), Catálogo (canjear → RPC `crear_solicitud` + "Mis canjes" con estados), **Beneficios** (campañas vigentes del cliente como cuadros con degradado violeta/fucsia: % descuento, local o "Todos los locales", vencimiento — viene de `campanias` en `GET /api/portal-datos`, que llama a `campanias_vigentes_cliente`), Tarjeta Virtual, Mi cuenta (cambio de contraseña).
 - **Estética**: sidebar oscura `#2b2a33` + header degradado `from-violet-950 via-purple-800 to-fuchsia-700`, acentos fucsia.
 
 ---
