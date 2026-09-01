@@ -3,9 +3,17 @@ import { useNavigate } from 'react-router-dom'
 import * as XLSX from 'xlsx'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../contexts/AuthContext'
-import { Button, Input, Card, Badge, puntos, formatTarjeta } from '../components/ui'
+import { Button, Input, Select, Card, Badge, puntos, formatTarjeta } from '../components/ui'
 
-const VACIO = { nombre: '', dni: '', email: '', telefono: '', cliente_web: false, codigo_interno: '' }
+const VACIO = {
+  nombre: '',
+  dni: '',
+  email: '',
+  telefono: '',
+  cliente_web: false,
+  codigo_interno: '',
+  grupo_id: '',
+}
 
 export default function Clientes() {
   const { isAdmin } = useAuth()
@@ -17,16 +25,18 @@ export default function Clientes() {
   const [msg, setMsg] = useState(null)
   const [busqueda, setBusqueda] = useState('')
   const [conMovs, setConMovs] = useState(() => new Set())
+  const [grupos, setGrupos] = useState([])
 
   async function cargar() {
     setLoading(true)
-    const [{ data, error }, { data: cg }, { data: cj }] = await Promise.all([
+    const [{ data, error }, { data: cg }, { data: cj }, { data: gr }] = await Promise.all([
       supabase
         .from('clientes')
-        .select('*, tarjetas(numero, puntos, puntos_remanentes, activa)')
+        .select('*, tarjetas(numero, puntos, puntos_remanentes, activa), grupos(nombre)')
         .order('created_at', { ascending: false }),
       supabase.from('cargas').select('cliente_id'),
       supabase.from('canjes').select('cliente_id'),
+      supabase.from('grupos').select('*').order('nombre'),
     ])
     if (error) setMsg({ tipo: 'error', texto: error.message })
     const movs = new Set()
@@ -34,6 +44,7 @@ export default function Clientes() {
     ;(cj || []).forEach((r) => r.cliente_id && movs.add(r.cliente_id))
     setConMovs(movs)
     setClientes(data || [])
+    setGrupos(gr || [])
     setLoading(false)
   }
 
@@ -69,6 +80,7 @@ export default function Clientes() {
       telefono: c.telefono || '',
       cliente_web: !!c.cliente_web,
       codigo_interno: c.codigo_interno || '',
+      grupo_id: c.grupo_id || '',
     })
     setMsg(null)
     window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -109,6 +121,7 @@ export default function Clientes() {
       telefono: form.telefono.trim() || null,
       cliente_web: !!form.cliente_web,
       codigo_interno: form.codigo_interno || null,
+      grupo_id: form.grupo_id || null,
     }
     let error
     if (editId) {
@@ -159,6 +172,36 @@ export default function Clientes() {
     // Máscara simple: solo dígitos, hasta 10
     const d = e.target.value.replace(/\D/g, '').slice(0, 10)
     setForm((f) => ({ ...f, telefono: d }))
+  }
+
+  // ---------- Grupos (para asignar campañas a un grupo completo) ----------
+  const [nombreGrupo, setNombreGrupo] = useState('')
+  const [grupoMsg, setGrupoMsg] = useState(null)
+  const [grupoLoading, setGrupoLoading] = useState(false)
+
+  async function crearGrupo(e) {
+    e.preventDefault()
+    setGrupoMsg(null)
+    if (!nombreGrupo.trim()) return
+    setGrupoLoading(true)
+    const { error } = await supabase.from('grupos').insert({ nombre: nombreGrupo.trim() })
+    setGrupoLoading(false)
+    if (error) {
+      setGrupoMsg(error.message.includes('duplicate') ? 'Ya existe un grupo con ese nombre.' : error.message)
+      return
+    }
+    setNombreGrupo('')
+    cargar()
+  }
+
+  async function eliminarGrupo(g) {
+    if (!confirm(`¿Eliminar el grupo "${g.nombre}"? Los clientes asignados quedarán sin grupo.`)) return
+    const { error } = await supabase.from('grupos').delete().eq('id', g.id)
+    if (error) {
+      setGrupoMsg(error.message)
+      return
+    }
+    cargar()
   }
 
   // ---------- Importación masiva por Excel ----------
@@ -312,6 +355,18 @@ export default function Clientes() {
               maxLength={5}
               placeholder="5 caracteres"
             />
+            <Select
+              label="Grupo (opcional)"
+              value={form.grupo_id}
+              onChange={(e) => setForm((f) => ({ ...f, grupo_id: e.target.value }))}
+            >
+              <option value="">— Sin grupo —</option>
+              {grupos.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.nombre}
+                </option>
+              ))}
+            </Select>
             <label className="flex items-center gap-2 text-sm text-slate-600 pb-2">
               <input
                 type="checkbox"
@@ -411,6 +466,47 @@ export default function Clientes() {
         </Card>
       )}
 
+      {isAdmin && (
+        <Card>
+          <h2 className="font-semibold text-slate-700 mb-1">Grupos de clientes</h2>
+          <p className="text-xs text-slate-500 mb-3">
+            Usalos para asignar una campaña a varios clientes de una sola vez.
+          </p>
+          <form onSubmit={crearGrupo} className="flex flex-wrap gap-2 items-end">
+            <Input
+              label="Nuevo grupo"
+              value={nombreGrupo}
+              onChange={(e) => setNombreGrupo(e.target.value)}
+              className="flex-1 min-w-[180px]"
+            />
+            <Button type="submit" disabled={grupoLoading}>
+              {grupoLoading ? 'Creando…' : 'Agregar'}
+            </Button>
+          </form>
+          {grupoMsg && <p className="text-sm text-red-600 mt-2">{grupoMsg}</p>}
+          {grupos.length > 0 && (
+            <ul className="mt-3 flex flex-wrap gap-2">
+              {grupos.map((g) => (
+                <li
+                  key={g.id}
+                  className="inline-flex items-center gap-1.5 bg-slate-100 text-slate-700 text-xs font-medium px-2.5 py-1 rounded-full"
+                >
+                  {g.nombre}
+                  <button
+                    type="button"
+                    onClick={() => eliminarGrupo(g)}
+                    className="text-slate-400 hover:text-red-600"
+                    aria-label={`Eliminar grupo ${g.nombre}`}
+                  >
+                    ✕
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      )}
+
       <Card>
         <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
           <h2 className="font-semibold text-slate-700">
@@ -462,6 +558,9 @@ export default function Clientes() {
                           <div className="text-xs font-mono font-normal text-slate-400">
                             cód: {c.codigo_interno}
                           </div>
+                        )}
+                        {c.grupos?.nombre && (
+                          <div className="text-xs font-normal text-slate-400">grupo: {c.grupos.nombre}</div>
                         )}
                       </td>
                       <td className="py-2 pr-3" data-label="DNI">

@@ -15,6 +15,7 @@ puntos-app/
 │   ├── admin-users.js     # ABM de usuarios (service_role)
 │   ├── clientes.js        # REST API: alta de cliente (emite tarjeta)
 │   ├── cargar-puntos.js   # REST API: carga de puntos (comercio obligatorio)
+│   ├── campanias.js       # REST API (GET): campañas vigentes por tarjeta o DNI, para facturación
 │   ├── _portal.js         # Helpers del portal (scrypt, token HMAC, Brevo) — no es endpoint
 │   ├── portal-auth.js     # Auth del portal: registro/login/olvido/reset/cambiar_password
 │   └── portal-datos.js    # Datos del portal (GET) + canjear premio (POST)
@@ -24,7 +25,8 @@ puntos-app/
 │   │   ├── Layout.jsx      # Navegación (con menús desplegables) + roles
 │   │   ├── PortalLayout.jsx # Layout del portal de clientes (sidebar oscura + header degradado)
 │   │   ├── ProtectedRoute.jsx
-│   │   └── ClienteCombo.jsx # Select editable (nombre/DNI/tarjeta)
+│   │   ├── ClienteCombo.jsx # Select editable, un cliente (nombre/DNI/tarjeta)
+│   │   └── ClienteMultiSelect.jsx # Selector múltiple de clientes (buscador + chips), usado en Campañas
 │   ├── contexts/AuthContext.jsx  # useAuth() -> { user, profile, role, isAdmin }
 │   ├── contexts/PortalAuthContext.jsx # Sesión del portal (token propio en localStorage)
 │   ├── pages/
@@ -34,10 +36,12 @@ puntos-app/
 │   │   ├── CargarPuntos.jsx     # Carga manual por factura (comercio + nº + $)
 │   │   ├── AjustePuntos.jsx     # Ajuste de puntos ±, por comercio, con motivo (admin; RPC ajustar_puntos)
 │   │   ├── Premios.jsx          # Catálogo e-commerce + alta (admin) + solicitar canje
+│   │   ├── Campanias.jsx        # Alta de Campañas: % descuento, vigencia, criterio local, destinatarios
 │   │   ├── SolicitudesPremios.jsx # Flujo de estados de las solicitudes de canje
 │   │   ├── Auditoria.jsx        # Movimientos (cargas + canjes + estados de solicitudes) + Excel; arranca en últimos 30 días
 │   │   ├── Configuracion.jsx    # $/punto + tope de importe por factura (admin)
-│   │   ├── Comercios.jsx        # ABM de comercios + logo (admin)
+│   │   ├── Comercios.jsx        # ABM de comercios + logo (admin) — usado para PUNTOS
+│   │   ├── Locales.jsx          # ABM de locales comerciales: nombre, logo, dirección (admin) — usado para CAMPAÑAS
 │   │   ├── Usuarios.jsx         # ABM usuarios (admin)
 │   │   └── portal/              # Portal de clientes (perfil "Cliente")
 │   │       ├── PortalLogin.jsx      # Login + crear cuenta + olvido + reset (?reset=TOKEN)
@@ -54,8 +58,8 @@ puntos-app/
 ---
 
 ## Menú de navegación
-- **Admin**: Inicio · Clientes · **Puntos ▾** (Carga · Ajuste) · **Premios ▾** (Alta Premio · Solicitudes) · **Configuración ▾** (Parámetros · Comercios · Usuarios) · Auditoría
-- **Operador**: Inicio · Clientes · Puntos (solo carga) · **Premios ▾** · Auditoría
+- **Admin**: Inicio · Clientes · **Puntos ▾** (Carga · Ajuste) · **Premios ▾** (Alta Premio · Alta Campaña · Solicitudes) · **Configuración ▾** (Parámetros · Comercios · Locales · Usuarios) · Auditoría
+- **Operador**: Inicio · Clientes · Puntos (solo carga) · **Premios ▾** (Alta Premio · Alta Campaña · Solicitudes, solo lectura salvo admin) · Auditoría
 - Los desplegables (`NavDropdown` en `Layout.jsx`) se aplanan en mobile.
 
 ## Roles
@@ -91,7 +95,7 @@ El saldo neto por comercio se calcula con la vista **`saldos_por_comercio`** = c
 
 ## Base de datos — tablas
 - **profiles**: id, email, nombre, role ('admin'|'operador')
-- **clientes**: id, nombre, dni (único, `^[1-9][0-9]{6,7}$` → 1.000.000–99.999.999), email (obligatorio en el front), telefono, activo, **cliente_web** (tilde en el form; badge 🌐 en el listado), **codigo_interno** (opcional, 5 caracteres alfanuméricos, `CHECK` en DB; buscable en el listado)
+- **clientes**: id, nombre, dni (único, `^[1-9][0-9]{6,7}$` → 1.000.000–99.999.999), email (obligatorio en el front), telefono, activo, **cliente_web** (tilde en el form; badge 🌐 en el listado), **codigo_interno** (opcional, 5 caracteres alfanuméricos, `CHECK` en DB; buscable en el listado), **grupo_id** (opcional, 1 grupo por cliente; asignable en alta/edición)
 - **tarjetas**: id, numero (16 díg. único), cliente_id (único, 1 por cliente), **puntos** (acumulados), **puntos_remanentes** (disponibles), activa
 - **config**: id=1, pesos_por_punto (default 1000), **max_factura_pesos** (default 9.999.999)
 - **comercios**: id, nombre (único), **logo_url**, activo
@@ -101,6 +105,7 @@ El saldo neto por comercio se calcula con la vista **`saldos_por_comercio`** = c
 - **canjes**: premio_id, premio_titulo, cliente_id, cliente_nombre, tarjeta_id, numero_tarjeta, puntos, **comercio_id/comercio_nombre** (del premio; null = general), usuario_email
 - **canje_detalle**: canje_id, comercio_id, puntos — de qué comercio(s) salieron los puntos (reparto de canjes generales)
 - **solicitudes**: premio/cliente/tarjeta/comercio (snapshots), puntos, **estado** ('pendiente'|'revision'|'confirmado'|'entregado'|'rechazada'), canje_id, solicitado_por, actualizado_por, created_at, updated_at
+- **grupos**, **locales**, **campanias**, **campania_clientes**, **campania_grupos** — ver sección "Campañas" más abajo
 
 ### Número de tarjeta
 Secuencia `tarjeta_numero_seq` desde **10000100**, formateada a 16 díg. con `lpad`. Primera: `0000 0000 1000 0100`.
@@ -115,7 +120,7 @@ Secuencia `tarjeta_numero_seq` desde **10000100**, formateada a 16 díg. con `lp
 - **Triggers**: `trg_crear_tarjeta_cliente` (emite tarjeta al alta de cliente), `handle_new_user` (perfil al registrar en Auth), `trg_prevenir_borrado_cliente` (no borra clientes con **cargas o canjes** → solo baja lógica), `trg_sync_tarjeta_activa` (baja/alta del cliente sincroniza `tarjetas.activa`). `is_admin()` helper de RLS.
 
 ### Storage (buckets públicos)
-- **`premios`** — fotos de premios. **`comercios`** — logos de comercios. Lectura pública; escritura solo admin.
+- **`premios`** — fotos de premios. **`comercios`** — logos de comercios. **`locales`** — logos de locales comerciales. Lectura pública; escritura solo admin.
 
 ---
 
@@ -123,6 +128,29 @@ Secuencia `tarjeta_numero_seq` desde **10000100**, formateada a 16 díg. con `lp
 1. En **Premios → Alta Premio**, "Solicitar canje" crea una **solicitud** en estado `pendiente` (valida remanentes; **no descuenta**).
 2. En **Premios → Solicitudes** se gestiona el ciclo:
    `pendiente` → (Pasar a revisión) `revision` → (**Confirmar canje** = descuenta puntos+stock) `confirmado` → (Marcar entregado) `entregado`. Desde pendiente/revisión se puede `rechazada` (libera la reserva).
+
+---
+
+## Campañas (ofertas de % de descuento)
+Distinto del sistema de puntos: una **campaña** es un % de descuento otorgado a clientes puntuales y/o
+grupos completos, con vigencia y alcance opcional a un único **local comercial**.
+
+- **`grupos`**: agrupan clientes (asignación en Alta/Edición de cliente, con gestión de altas/bajas de
+  grupos en la propia página Clientes). Un cliente pertenece a **como mucho un grupo**.
+- **`locales`**: entidad **distinta de `comercios`** (que es solo para puntos). Tiene nombre, logo
+  (bucket Storage `locales`), dirección y activo. Se gestionan en Configuración → Locales.
+- **`campanias`**: nombre, descripción, `descuento_porcentaje` (0–100), `local_id` (null = **General**,
+  aplica a todos los locales; con valor = restringida a ESE local), `fecha_desde`/`fecha_hasta`
+  (vigencia; hasta nulo = sin vencimiento), `activa`.
+- **Destinatarios combinables**: `campania_clientes` (individuales) y `campania_grupos` (grupos
+  completos) — una campaña puede tener clientes sueltos Y grupos a la vez; se otorga a la unión de ambos.
+- **`campanias_vigentes_cliente(p_cliente_id, p_local_id?)`** (RPC) — devuelve las campañas activas,
+  vigentes hoy y aplicables al cliente (individual o vía su grupo). Sin `p_local_id`: todas las vigentes.
+  Con `p_local_id`: las generales + las de ese local únicamente (para no aplicar el descuento de un
+  local distinto de donde se factura).
+- **API externa `GET /api/campanias`** (Bearer admin) — identifica al cliente por `numero` (tarjeta) o
+  `dni`, y opcionalmente `local`/`local_id`; pensada para que el **sistema de facturación** consulte los
+  descuentos vigentes de un cliente al emitir una factura.
 
 ---
 
@@ -147,9 +175,10 @@ Requieren `SUPABASE_SERVICE_ROLE_KEY` en el servidor y uno de estos dos modos de
 - **`X-Api-Key: <API_INTEGRATION_KEY>`** — para integraciones servidor-a-servidor (ej. pos-mayorista). Secreto fijo (env var `API_INTEGRATION_KEY`), no expira. Es el modo recomendado para cualquier sistema externo que llame seguido.
 - **`Authorization: Bearer <access_token>`** de un usuario **admin** — pensado para uso manual/interactivo (Postman, un script a mano). El `access_token` de Supabase Auth **expira** (por defecto a la hora) — no usar para una integración recurrente.
 
-Solo **POST /api/cargar-puntos** acepta los dos modos (`getAdmin` en `api/cargar-puntos.js` prueba primero `X-Api-Key`, si no coincide cae al Bearer). El resto de los endpoints (`clientes`, `admin-users`) todavía exigen Bearer admin.
+**POST /api/cargar-puntos** y **GET /api/campanias** aceptan los dos modos (`getAdmin` prueba primero `X-Api-Key`, si no coincide cae al Bearer). El resto de los endpoints (`clientes`, `admin-users`) todavía exigen Bearer admin.
 - **POST /api/clientes** — crea cliente (y tarjeta). Body: `nombre*`, `dni*`, `email`, `telefono`.
 - **POST /api/cargar-puntos** — carga puntos. Body: `factura_pesos*`, `comercio*` (nombre) o `comercio_id`, `factura_numero`, y (`numero` | `dni`). `origen = 'api'` (o el que mande el caller).
+- **GET /api/campanias** — campañas vigentes de un cliente (para el sistema de facturación). Query: (`numero` | `dni`) y opcional (`local` | `local_id`). Devuelve `{ cliente, dni, numero_tarjeta, local, campanias: [{ id, nombre, descripcion, descuento_porcentaje, local, fecha_desde, fecha_hasta }] }`.
 - **POST/PATCH/DELETE /api/admin-users** — ABM de usuarios de Auth.
 
 #### Bearer token desde un sistema externo (uso manual, no recomendado para integraciones)
@@ -196,5 +225,6 @@ migration_usuarios_web.sql       # portal de clientes: tabla usuarios_web
 migration_solicitudes_historial.sql # historial de estados de solicitudes (trigger) para Auditoría
 migration_stock_premios.sql      # stock de premios por movimientos (ajustes justificados + canjes)
 migration_ajuste_puntos.sql      # ajuste de puntos: origen 'ajuste' en cargas + RPC ajustar_puntos
+migration_campanias.sql          # grupos de clientes, locales comerciales y campañas (% descuento)
 ```
 > Nota: `schema.sql` ya refleja el estado final; las migraciones son para bases creadas antes de cada cambio.

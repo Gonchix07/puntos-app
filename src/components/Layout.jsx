@@ -56,6 +56,7 @@ export default function Layout() {
     label: 'Premios',
     children: [
       { to: '/premios', label: 'Alta Premio', end: true },
+      { to: '/premios/campanias', label: 'Alta Campaña' },
       { to: '/premios/solicitudes', label: 'Solicitudes' },
     ],
   }
@@ -65,6 +66,7 @@ export default function Layout() {
     children: [
       { to: '/configuracion', label: 'Parámetros', end: true },
       { to: '/comercios', label: 'Comercios' },
+      { to: '/locales', label: 'Locales' },
       { to: '/usuarios', label: 'Usuarios' },
     ],
   }
