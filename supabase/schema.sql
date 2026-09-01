@@ -1029,9 +1029,10 @@ grant execute on function public.saldos_cliente(uuid) to authenticated;
 --  - Grupos de clientes (para asignar campañas a un grupo completo)
 --  - Locales comerciales (nombre, logo, dirección) — entidad nueva,
 --    distinta de "comercios" (que se usa para la acumulación de puntos)
---  - Campañas: % de descuento, vigencia (desde/hasta), alcance General o
---    restringida a UN local, y destinatarios: clientes individuales y/o
---    grupos completos (se pueden combinar en la misma campaña)
+--  - Campañas: % de descuento, vigente desde una fecha (sin vencimiento
+--    por fecha; se desactivan manualmente), alcance General o restringida
+--    a UN local, y destinatarios: clientes individuales y/o grupos
+--    completos (se pueden combinar en la misma campaña)
 --  - RPC campanias_vigentes_cliente(cliente, local?) para la API externa
 -- ============================================================
 
@@ -1062,14 +1063,12 @@ create table if not exists public.campanias (
   descripcion text,
   descuento_porcentaje numeric(5,2) not null check (descuento_porcentaje > 0 and descuento_porcentaje <= 100),
   local_id uuid references public.locales(id) on delete set null,  -- null = general (todos los locales)
-  fecha_desde date not null,
-  fecha_hasta date,                                                 -- null = sin vencimiento
+  fecha_desde date not null,                                        -- permite programar a futuro; sin vencimiento por fecha
   activa boolean not null default true,
-  created_at timestamptz not null default now(),
-  constraint campanias_vigencia_valida check (fecha_hasta is null or fecha_hasta >= fecha_desde)
+  created_at timestamptz not null default now()
 );
 create index if not exists idx_campanias_local on public.campanias(local_id);
-create index if not exists idx_campanias_vigencia on public.campanias(fecha_desde, fecha_hasta);
+create index if not exists idx_campanias_vigencia on public.campanias(fecha_desde);
 
 -- Destinatarios: clientes individuales y grupos (se pueden combinar)
 create table if not exists public.campania_clientes (
@@ -1091,6 +1090,10 @@ create index if not exists idx_campania_grupos_grupo on public.campania_grupos(g
 --  por local (usada por la API externa de facturación)
 --  - Sin p_local_id: devuelve TODAS las vigentes del cliente.
 --  - Con p_local_id: devuelve las generales + las de ESE local.
+--  - Sin vencimiento por fecha: una campaña queda vigente desde
+--    fecha_desde hasta que se desactiva manualmente (activa = false).
+--    Puede haber múltiples campañas superpuestas para distintos
+--    clientes/grupos sin ninguna restricción entre ellas.
 -- ============================================================
 create or replace function public.campanias_vigentes_cliente(
   p_cliente_id uuid,
@@ -1103,19 +1106,17 @@ returns table(
   descuento_porcentaje numeric,
   local_id uuid,
   local_nombre text,
-  fecha_desde date,
-  fecha_hasta date
+  fecha_desde date
 )
 language sql
 security definer set search_path = public
 as $$
   select distinct c.id, c.nombre, c.descripcion, c.descuento_porcentaje,
-         c.local_id, l.nombre, c.fecha_desde, c.fecha_hasta
+         c.local_id, l.nombre, c.fecha_desde
   from public.campanias c
   left join public.locales l on l.id = c.local_id
   where c.activa = true
     and c.fecha_desde <= current_date
-    and (c.fecha_hasta is null or c.fecha_hasta >= current_date)
     and (p_local_id is null or c.local_id is null or c.local_id = p_local_id)
     and (
       exists (

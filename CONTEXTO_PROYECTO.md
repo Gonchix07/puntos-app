@@ -80,7 +80,7 @@ Badge: admin=amber (👑), operador=sky (🧑‍💼).
 - **Registro**: el cliente crea su cuenta con DNI + email (deben coincidir con su ficha) + contraseña (mín. 8).
 - **Sesión**: token HMAC-SHA256 (7 días) firmado con `PORTAL_TOKEN_SECRET`, guardado en localStorage (`portal_token`). Cada request valida en DB que la cuenta, el cliente y el tilde sigan activos.
 - **Olvido de contraseña**: mail por **Brevo** (`BREVO_API_KEY`, `BREVO_FROM_EMAIL`, `BREVO_FROM_NAME`, `PORTAL_URL`) con link `/portal/login?reset=TOKEN` (vence en 1 h; en DB solo se guarda el hash SHA-256 del token).
-- **Páginas**: Inicio (stats con borde fucsia, gráfico SVG de puntos por mes, donut por comercio, detalle por comercio, últimos movimientos), Catálogo (canjear → RPC `crear_solicitud` + "Mis canjes" con estados), **Beneficios** (campañas vigentes del cliente como cuadros con degradado violeta/fucsia: % descuento, local o "Todos los locales", vencimiento — viene de `campanias` en `GET /api/portal-datos`, que llama a `campanias_vigentes_cliente`), Tarjeta Virtual, Mi cuenta (cambio de contraseña).
+- **Páginas**: Inicio (stats con borde fucsia, gráfico SVG de puntos por mes, donut por comercio, detalle por comercio, últimos movimientos), Catálogo (canjear → RPC `crear_solicitud` + "Mis canjes" con estados), **Beneficios** (campañas vigentes del cliente como cuadros con degradado violeta/fucsia: % descuento, local o "Todos los locales" — sin vencimiento por fecha — viene de `campanias` en `GET /api/portal-datos`, que llama a `campanias_vigentes_cliente`), Tarjeta Virtual, Mi cuenta (cambio de contraseña).
 - **Estética**: sidebar oscura `#2b2a33` + header degradado `from-violet-950 via-purple-800 to-fuchsia-700`, acentos fucsia.
 
 ---
@@ -141,8 +141,10 @@ grupos completos, con vigencia y alcance opcional a un único **local comercial*
 - **`locales`**: entidad **distinta de `comercios`** (que es solo para puntos). Tiene nombre, logo
   (bucket Storage `locales`), dirección y activo. Se gestionan en Configuración → Locales.
 - **`campanias`**: nombre, descripción, `descuento_porcentaje` (0–100), `local_id` (null = **General**,
-  aplica a todos los locales; con valor = restringida a ESE local), `fecha_desde`/`fecha_hasta`
-  (vigencia; hasta nulo = sin vencimiento), `activa`.
+  aplica a todos los locales; con valor = restringida a ESE local), `fecha_desde` (permite programar
+  a futuro), `activa`. **Sin vencimiento por fecha**: se da de baja manualmente (`activa = false`).
+  Pueden existir múltiples campañas superpuestas en el tiempo para distintos clientes/grupos sin
+  ninguna restricción entre ellas.
 - **Destinatarios combinables**: `campania_clientes` (individuales) y `campania_grupos` (grupos
   completos) — una campaña puede tener clientes sueltos Y grupos a la vez; se otorga a la unión de ambos.
 - **`campanias_vigentes_cliente(p_cliente_id, p_local_id?)`** (RPC) — devuelve las campañas activas,
@@ -179,7 +181,7 @@ Requieren `SUPABASE_SERVICE_ROLE_KEY` en el servidor y uno de estos dos modos de
 **POST /api/cargar-puntos** y **GET /api/campanias** aceptan los dos modos (`getAdmin` prueba primero `X-Api-Key`, si no coincide cae al Bearer). El resto de los endpoints (`clientes`, `admin-users`) todavía exigen Bearer admin.
 - **POST /api/clientes** — crea cliente (y tarjeta). Body: `nombre*`, `dni*`, `email`, `telefono`.
 - **POST /api/cargar-puntos** — carga puntos. Body: `factura_pesos*`, `comercio*` (nombre) o `comercio_id`, `factura_numero`, y (`numero` | `dni`). `origen = 'api'` (o el que mande el caller).
-- **GET /api/campanias** — campañas vigentes de un cliente (para el sistema de facturación). Query: (`numero` | `dni`) y opcional (`local` | `local_id`). Devuelve `{ cliente, dni, numero_tarjeta, local, campanias: [{ id, nombre, descripcion, descuento_porcentaje, local, fecha_desde, fecha_hasta }] }`.
+- **GET /api/campanias** — campañas vigentes de un cliente (para el sistema de facturación). Query: (`numero` | `dni`) y opcional (`local` | `local_id`). Devuelve `{ cliente, dni, numero_tarjeta, local, campanias: [{ id, nombre, descripcion, descuento_porcentaje, local, fecha_desde }] }`.
 - **POST/PATCH/DELETE /api/admin-users** — ABM de usuarios de Auth.
 
 #### Bearer token desde un sistema externo (uso manual, no recomendado para integraciones)
@@ -227,5 +229,6 @@ migration_solicitudes_historial.sql # historial de estados de solicitudes (trigg
 migration_stock_premios.sql      # stock de premios por movimientos (ajustes justificados + canjes)
 migration_ajuste_puntos.sql      # ajuste de puntos: origen 'ajuste' en cargas + RPC ajustar_puntos
 migration_campanias.sql          # grupos de clientes, locales comerciales y campañas (% descuento)
+migration_campanias_sin_vencimiento.sql # quita fecha_hasta de campanias; ya no vencen por fecha
 ```
 > Nota: `schema.sql` ya refleja el estado final; las migraciones son para bases creadas antes de cada cambio.

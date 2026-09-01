@@ -19,12 +19,16 @@
 // restringidas a ESE local únicamente (así no se aplica el descuento de un
 // local distinto de donde se está facturando).
 //
+// Las campañas no tienen fecha de vencimiento: quedan vigentes desde
+// "fecha_desde" hasta que se desactivan manualmente. Puede haber múltiples
+// campañas superpuestas en el tiempo para distintos clientes/grupos.
+//
 // Respuesta 200:
 // {
 //   "cliente": "Juan Pérez", "dni": "30123456", "numero_tarjeta": "...",
 //   "local": "Sucursal Centro" | null,
 //   "campanias": [
-//     { "id", "nombre", "descripcion", "descuento_porcentaje", "local", "fecha_desde", "fecha_hasta" }
+//     { "id", "nombre", "descripcion", "descuento_porcentaje", "local", "fecha_desde" }
 //   ]
 // }
 // "local" en cada campaña es el nombre del local o "General".
@@ -133,7 +137,6 @@ export default async function handler(req, res) {
     descuento_porcentaje: Number(c.descuento_porcentaje),
     local: c.local_id ? c.local_nombre : 'General',
     fecha_desde: c.fecha_desde,
-    fecha_hasta: c.fecha_hasta,
   }))
 
   return res.status(200).json({

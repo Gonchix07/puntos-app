@@ -10,7 +10,6 @@ const VACIO = {
   descuento_porcentaje: '',
   local_id: '',
   fecha_desde: '',
-  fecha_hasta: '',
   activa: true,
 }
 
@@ -18,12 +17,11 @@ function hoyISO() {
   return new Date().toISOString().slice(0, 10)
 }
 
-// Estado real de la campaña según vigencia + flag activa
+// Estado real de la campaña según su inicio + flag activa. No hay
+// vencimiento por fecha: se da de baja manualmente con "activa".
 function estadoDe(c) {
   if (!c.activa) return { label: 'Inactiva', color: 'slate' }
-  const hoy = hoyISO()
-  if (c.fecha_desde > hoy) return { label: 'Próxima', color: 'sky' }
-  if (c.fecha_hasta && c.fecha_hasta < hoy) return { label: 'Vencida', color: 'red' }
+  if (c.fecha_desde > hoyISO()) return { label: 'Próxima', color: 'sky' }
   return { label: 'Vigente', color: 'green' }
 }
 
@@ -100,7 +98,6 @@ export default function Campanias() {
       descuento_porcentaje: String(c.descuento_porcentaje),
       local_id: c.local_id || '',
       fecha_desde: c.fecha_desde,
-      fecha_hasta: c.fecha_hasta || '',
       activa: c.activa,
     })
     setClientesSel(relClientes.filter((r) => r.campania_id === c.id).map((r) => r.cliente_id))
@@ -133,10 +130,6 @@ export default function Campanias() {
       setMsg({ tipo: 'error', texto: 'La fecha de inicio de vigencia es obligatoria.' })
       return
     }
-    if (form.fecha_hasta && form.fecha_hasta < form.fecha_desde) {
-      setMsg({ tipo: 'error', texto: 'La fecha de fin no puede ser anterior a la de inicio.' })
-      return
-    }
     if (clientesSel.length === 0 && gruposSel.length === 0) {
       setMsg({ tipo: 'error', texto: 'Seleccioná al menos un cliente individual o un grupo destinatario.' })
       return
@@ -149,7 +142,6 @@ export default function Campanias() {
       descuento_porcentaje: pct,
       local_id: form.local_id || null,
       fecha_desde: form.fecha_desde,
-      fecha_hasta: form.fecha_hasta || null,
       activa: form.activa,
     }
 
@@ -215,8 +207,9 @@ export default function Campanias() {
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-slate-800">Campañas</h1>
       <p className="text-sm text-slate-500 -mt-2">
-        Ofertas de % de descuento asignadas a clientes individuales y/o grupos, vigentes por un período,
-        generales o restringidas a un local. El sistema de facturación las consulta por tarjeta o DNI vía API.
+        Ofertas de % de descuento asignadas a clientes individuales y/o grupos, generales o restringidas a un
+        local. Sin vencimiento por fecha: se dan de baja manualmente. El sistema de facturación las consulta
+        por tarjeta o DNI vía API.
       </p>
 
       {msg && (
@@ -233,7 +226,7 @@ export default function Campanias() {
         <Card>
           <h2 className="font-semibold text-slate-700 mb-3">{editId ? 'Editar campaña' : 'Nueva campaña'}</h2>
           <form onSubmit={guardar} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               <Input
                 label="Nombre de la campaña"
                 value={form.nombre}
@@ -257,14 +250,11 @@ export default function Campanias() {
                 onChange={(e) => setForm((f) => ({ ...f, fecha_desde: e.target.value }))}
                 required
               />
-              <Input
-                label="Vigente hasta (opcional)"
-                type="date"
-                value={form.fecha_hasta}
-                onChange={(e) => setForm((f) => ({ ...f, fecha_hasta: e.target.value }))}
-                min={form.fecha_desde || undefined}
-              />
             </div>
+            <p className="text-xs text-slate-400 -mt-2">
+              Sin fecha de vencimiento: la campaña queda vigente hasta que la desactivés manualmente. Pueden
+              existir múltiples campañas superpuestas en el tiempo para distintos clientes o grupos.
+            </p>
 
             <label className="block">
               <span className="block text-sm font-medium text-slate-600 mb-1">Descripción (opcional)</span>
@@ -397,7 +387,7 @@ export default function Campanias() {
                   <th className="py-2 pr-3">Campaña</th>
                   <th className="py-2 pr-3 text-right">Descuento</th>
                   <th className="py-2 pr-3">Local</th>
-                  <th className="py-2 pr-3">Vigencia</th>
+                  <th className="py-2 pr-3">Desde</th>
                   <th className="py-2 pr-3">Destinatarios</th>
                   <th className="py-2 pr-3">Estado</th>
                   {isAdmin && <th className="py-2 pr-3 text-right">Acciones</th>}
@@ -419,8 +409,8 @@ export default function Campanias() {
                       <td className="py-2 pr-3" data-label="Local">
                         {c.local_id ? c.local_nombre || '—' : <Badge color="sky">General</Badge>}
                       </td>
-                      <td className="py-2 pr-3 whitespace-nowrap text-slate-500" data-label="Vigencia">
-                        {c.fecha_desde} → {c.fecha_hasta || 'sin vencimiento'}
+                      <td className="py-2 pr-3 whitespace-nowrap text-slate-500" data-label="Desde">
+                        {c.fecha_desde}
                       </td>
                       <td className="py-2 pr-3 text-slate-500" data-label="Destinatarios">
                         {cnt.clientes} cliente{cnt.clientes !== 1 ? 's' : ''} · {cnt.grupos} grupo
