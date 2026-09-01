@@ -874,8 +874,7 @@ declare
   v_premio public.premios%rowtype;
   v_nombre text;
   v_email text;
-  v_saldo numeric;
-  v_pend_com numeric;
+  v_remanente_comercio numeric;
   v_costo numeric;
   v_com_nombre text;
   v_sol public.solicitudes%rowtype;
@@ -897,15 +896,16 @@ begin
       v_card.puntos_remanentes, v_costo;
   end if;
 
-  -- Guarda por comercio (saldo real del comercio − pendientes de ese comercio)
+  -- Guarda por comercio: usa saldos_cliente (mismo cálculo que ve el
+  -- cliente en el catálogo), que ya descuenta tanto los pendientes propios
+  -- del comercio como la porción que le toque de premios Generales pendientes.
   if v_premio.comercio_id is not null then
-    select coalesce(sum(puntos), 0) into v_saldo from public.saldos_por_comercio
-      where cliente_id = p_cliente_id and comercio_id = v_premio.comercio_id;
-    select coalesce(sum(puntos), 0) into v_pend_com from public.solicitudes
-      where cliente_id = p_cliente_id and comercio_id = v_premio.comercio_id and estado in ('pendiente', 'revision');
-    if (v_saldo - v_pend_com) < v_costo then
+    select sc.remanente into v_remanente_comercio
+    from public.saldos_cliente(p_cliente_id) sc
+    where sc.comercio_id = v_premio.comercio_id;
+    if coalesce(v_remanente_comercio, 0) < v_costo then
       raise exception 'Puntos insuficientes en el comercio (considerando pendientes): disponibles %, se requieren %',
-        (v_saldo - v_pend_com), v_costo;
+        coalesce(v_remanente_comercio, 0), v_costo;
     end if;
     select nombre into v_com_nombre from public.comercios where id = v_premio.comercio_id;
   end if;
@@ -1000,76 +1000,57 @@ grant execute on function public.cambiar_estado_solicitud(uuid, text, text) to a
 --  que canjear_premio al confirmar), para que la suma de remanentes
 --  por comercio siempre coincida con el remanente total de la tarjeta.
 -- ============================================================
+-- Reparte lo pendiente de premios Generales entre los comercios con más
+-- remanente propio disponible primero, usando funciones ventana (sin loops):
+-- para cada comercio ordenado de mayor a menor "disponible propio", se le
+-- suma cuánto de lo acumulado por los comercios anteriores en ese orden ya
+-- alcanzaría a cubrir el monto general pendiente; lo que le toca a este
+-- comercio es min(su disponible propio, lo que todavía falte cubrir).
 drop function if exists public.saldos_cliente(uuid);
 create or replace function public.saldos_cliente(p_cliente_id uuid)
 returns table(comercio_id uuid, comercio_nombre text, saldo numeric, pendiente numeric, remanente numeric)
-language plpgsql
+language sql
 security definer set search_path = public
 as $$
-declare
-  v_general_pend numeric;
-  v_restante numeric;
-  v_take numeric;
-  v_rec record;
-  v_ids uuid[] := '{}';
-  v_nombres text[] := '{}';
-  v_saldos numeric[] := '{}';
-  v_pendientes numeric[] := '{}';
-  v_n int;
-  v_i int;
-  v_j int;
-begin
-  -- Saldo real y pendiente específico (solicitudes de premios de ESE
-  -- comercio) por cada comercio donde el cliente tiene puntos.
-  for v_rec in
-    select s.comercio_id as cid, co.nombre as nom, s.puntos as sal,
-           coalesce((
-             select sum(sol.puntos) from public.solicitudes sol
-             where sol.cliente_id = p_cliente_id and sol.comercio_id = s.comercio_id
-               and sol.estado in ('pendiente', 'revision')
-           ), 0) as pend
+  with base as (
+    select s.comercio_id, co.nombre as comercio_nombre, s.puntos as saldo,
+           coalesce(pc.pend, 0) as pendiente_propio
     from public.saldos_por_comercio s
     join public.comercios co on co.id = s.comercio_id
+    left join (
+      select comercio_id, sum(puntos) as pend
+      from public.solicitudes
+      where cliente_id = p_cliente_id and comercio_id is not null and estado in ('pendiente', 'revision')
+      group by comercio_id
+    ) pc on pc.comercio_id = s.comercio_id
     where s.cliente_id = p_cliente_id
-    order by co.nombre
-  loop
-    v_ids := array_append(v_ids, v_rec.cid);
-    v_nombres := array_append(v_nombres, v_rec.nom);
-    v_saldos := array_append(v_saldos, v_rec.sal);
-    v_pendientes := array_append(v_pendientes, v_rec.pend);
-  end loop;
-  v_n := coalesce(array_length(v_ids, 1), 0);
-
-  -- Puntos reservados por solicitudes de premios GENERALES (sin comercio propio)
-  select coalesce(sum(puntos), 0) into v_general_pend
-  from public.solicitudes
-  where cliente_id = p_cliente_id and comercio_id is null and estado in ('pendiente', 'revision');
-
-  -- Reparte lo general entre los comercios con más remanente disponible
-  -- primero (drena el más grande antes de pasar al siguiente).
-  v_restante := v_general_pend;
-  while v_restante > 0 and v_n > 0 loop
-    v_i := 1;
-    for v_j in 2..v_n loop
-      if (v_saldos[v_j] - v_pendientes[v_j]) > (v_saldos[v_i] - v_pendientes[v_i]) then
-        v_i := v_j;
-      end if;
-    end loop;
-    exit when (v_saldos[v_i] - v_pendientes[v_i]) <= 0;
-    v_take := least(v_saldos[v_i] - v_pendientes[v_i], v_restante);
-    v_pendientes[v_i] := v_pendientes[v_i] + v_take;
-    v_restante := v_restante - v_take;
-  end loop;
-
-  for v_i in 1..v_n loop
-    comercio_id := v_ids[v_i];
-    comercio_nombre := v_nombres[v_i];
-    saldo := v_saldos[v_i];
-    pendiente := v_pendientes[v_i];
-    remanente := v_saldos[v_i] - v_pendientes[v_i];
-    return next;
-  end loop;
-end;
+  ),
+  general as (
+    select coalesce(sum(puntos), 0) as monto
+    from public.solicitudes
+    where cliente_id = p_cliente_id and comercio_id is null and estado in ('pendiente', 'revision')
+  ),
+  ranked as (
+    select b.*,
+           greatest(b.saldo - b.pendiente_propio, 0) as disponible_propio,
+           sum(greatest(b.saldo - b.pendiente_propio, 0)) over (
+             order by (b.saldo - b.pendiente_propio) desc, b.comercio_id
+             rows between unbounded preceding and 1 preceding
+           ) as acumulado_antes
+    from base b
+  )
+  select
+    r.comercio_id,
+    r.comercio_nombre,
+    r.saldo,
+    r.pendiente_propio
+      + greatest(least(r.disponible_propio, g.monto - coalesce(r.acumulado_antes, 0)), 0) as pendiente,
+    r.saldo
+      - (r.pendiente_propio + greatest(least(r.disponible_propio, g.monto - coalesce(r.acumulado_antes, 0)), 0))
+      as remanente
+  from ranked r
+  cross join general g
+  order by r.comercio_nombre;
 $$;
 grant execute on function public.saldos_cliente(uuid) to authenticated;
 grant execute on function public.saldos_cliente(uuid) to service_role;

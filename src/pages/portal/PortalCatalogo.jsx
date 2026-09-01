@@ -42,6 +42,9 @@ export default function PortalCatalogo() {
   const { premios, solicitudes, tarjeta, saldos = [], comercios = [] } = datos
   const disponibles = Number(tarjeta?.puntos_remanentes ?? 0)
   const logoPorComercio = new Map(comercios.map((c) => [c.id, c.logo_url]))
+  // Remanente por comercio: los puntos son específicos de cada comercio, la
+  // suma total (`disponibles`) solo se usa para premios de tipo General.
+  const remanentePorComercio = new Map(saldos.map((s) => [s.comercio_id, Number(s.remanente || 0)]))
 
   async function canjear(premio) {
     setConfirmar(null)
@@ -86,9 +89,15 @@ export default function PortalCatalogo() {
               </span>
             </Badge>
           ))}
-          <Badge color="indigo">Total disponible: ⭐ {puntos(disponibles)}</Badge>
+          <Badge color="indigo" title="Se usa para canjear premios de tipo General">
+            Total (premios Generales): ⭐ {puntos(disponibles)}
+          </Badge>
         </div>
       </div>
+      <p className="text-xs text-slate-400 -mt-4">
+        Los puntos son propios de cada comercio: un premio de un comercio solo se paga con lo acumulado ahí.
+        El total solo se usa para los premios Generales.
+      </p>
 
       {msg && (
         <div
@@ -107,7 +116,12 @@ export default function PortalCatalogo() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {premios.map((p) => {
-            const alcanza = disponibles >= Number(p.puntos_necesarios)
+            // Premio General: se paga con el total. Premio de un comercio:
+            // solo con lo disponible EN ESE comercio (no con el total).
+            const disponibleParaEste = p.comercio_id
+              ? remanentePorComercio.get(p.comercio_id) ?? 0
+              : disponibles
+            const alcanza = disponibleParaEste >= Number(p.puntos_necesarios)
             const sinStock = p.stock <= 0
             return (
               <Card key={p.id} className="relative flex flex-col p-0 overflow-hidden min-h-[340px]">
@@ -143,11 +157,21 @@ export default function PortalCatalogo() {
                       {sinStock ? 'Sin stock' : `Stock: ${p.stock}`}
                     </span>
                   </div>
+                  {!alcanza && !sinStock && (
+                    <p className="text-xs text-red-300 drop-shadow-sm">
+                      Disponible {p.comercio_id ? `en ${p.comercio?.nombre || 'el comercio'}` : ''}: ⭐{' '}
+                      {puntos(disponibleParaEste)}
+                    </p>
+                  )}
                   <Button
                     className="w-full !bg-fuchsia-700 hover:!bg-fuchsia-800"
                     disabled={!alcanza || sinStock || canjeando === p.id}
                     onClick={() => setConfirmar(p)}
-                    title={alcanza ? 'Solicitar canje' : 'No te alcanzan los puntos disponibles'}
+                    title={
+                      alcanza
+                        ? 'Solicitar canje'
+                        : `No te alcanzan los puntos disponibles${p.comercio_id ? ' en ese comercio' : ''}`
+                    }
                   >
                     {canjeando === p.id ? 'Canjeando…' : alcanza ? 'Solicitar canje' : 'Te faltan puntos'}
                   </Button>
