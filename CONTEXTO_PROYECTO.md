@@ -116,7 +116,7 @@ Secuencia `tarjeta_numero_seq` desde **10000100**, formateada a 16 díg. con `lp
 - **`canjear_premio(p_cliente_id, p_premio_id, p_usuario_email)`** — RPC atómica del canje efectivo. Premio de comercio → descuenta del saldo de ese comercio; premio general → del total, repartiendo entre comercios (mayor saldo primero) y registrando el reparto en `canje_detalle`. Baja `puntos` (acumulados) y `stock`.
 - **`crear_solicitud(p_cliente_id, p_premio_id, p_usuario_email)`** — valida remanentes (total y por comercio) y **reserva** (baja `puntos_remanentes`); crea la solicitud en `pendiente`.
 - **`cambiar_estado_solicitud(p_solicitud_id, p_nuevo_estado, p_usuario_email)`** — aplica el flujo; al **confirmar** llama a `canjear_premio`; al **rechazar** libera la reserva de remanentes.
-- **`saldos_cliente(p_cliente_id)`** — devuelve por comercio: `saldo`, `pendiente`, `remanente`.
+- **`saldos_cliente(p_cliente_id)`** — devuelve por comercio: `saldo`, `pendiente`, `remanente`. El `pendiente` incluye tanto las solicitudes de premios de ESE comercio como la porción que le toca de solicitudes de premios **Generales** (comercio_id null), repartida entre los comercios con más remanente primero — mismo criterio que `canjear_premio`. Así la suma de remanentes por comercio siempre coincide con `tarjetas.puntos_remanentes` (antes de este fix, una solicitud General pendiente reducía el total pero no aparecía descontada de ningún comercio en el desglose).
 - **`saldos_por_comercio`** (vista) — saldo neto por (cliente, comercio).
 - **Triggers**: `trg_crear_tarjeta_cliente` (emite tarjeta al alta de cliente), `handle_new_user` (perfil al registrar en Auth), `trg_prevenir_borrado_cliente` (no borra clientes con **cargas o canjes** → solo baja lógica), `trg_sync_tarjeta_activa` (baja/alta del cliente sincroniza `tarjetas.activa`). `is_admin()` helper de RLS.
 
@@ -230,5 +230,6 @@ migration_stock_premios.sql      # stock de premios por movimientos (ajustes jus
 migration_ajuste_puntos.sql      # ajuste de puntos: origen 'ajuste' en cargas + RPC ajustar_puntos
 migration_campanias.sql          # grupos de clientes, locales comerciales y campañas (% descuento)
 migration_campanias_sin_vencimiento.sql # quita fecha_hasta de campanias; ya no vencen por fecha
+migration_saldos_general_pendiente.sql  # fix: saldos_cliente reparte lo pendiente de premios Generales por comercio
 ```
 > Nota: `schema.sql` ya refleja el estado final; las migraciones son para bases creadas antes de cada cambio.
