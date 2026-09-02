@@ -142,15 +142,18 @@ grupos completos, con vigencia y alcance opcional a un único **local comercial*
   (bucket Storage `locales`), dirección y activo. Se gestionan en Configuración → Locales.
 - **`campanias`**: nombre, descripción, `descuento_porcentaje` (0–100), `local_id` (null = **General**,
   aplica a todos los locales; con valor = restringida a ESE local), `fecha_desde` (permite programar
-  a futuro), `activa`. **Sin vencimiento por fecha**: se da de baja manualmente (`activa = false`).
-  Pueden existir múltiples campañas superpuestas en el tiempo para distintos clientes/grupos sin
-  ninguna restricción entre ellas.
+  a futuro), **`fecha_hasta`** (opcional; null = sin vencimiento por fecha), **`puntos_minimos`**
+  (default 0; el cliente debe tener puntos **acumulados totales** ≥ este valor para que la campaña le
+  aplique — se compara contra `tarjetas.puntos`, no el remanente), `activa` (baja manual, independiente
+  de la vigencia por fecha). Pueden existir múltiples campañas superpuestas en el tiempo para distintos
+  clientes/grupos sin ninguna restricción entre ellas.
 - **Destinatarios combinables**: `campania_clientes` (individuales) y `campania_grupos` (grupos
   completos) — una campaña puede tener clientes sueltos Y grupos a la vez; se otorga a la unión de ambos.
 - **`campanias_vigentes_cliente(p_cliente_id, p_local_id?)`** (RPC) — devuelve las campañas activas,
-  vigentes hoy y aplicables al cliente (individual o vía su grupo). Sin `p_local_id`: todas las vigentes.
-  Con `p_local_id`: las generales + las de ese local únicamente (para no aplicar el descuento de un
-  local distinto de donde se factura).
+  vigentes hoy (entre `fecha_desde` y `fecha_hasta`), con `puntos_minimos` cumplido, y aplicables al
+  cliente (individual o vía su grupo). Sin `p_local_id`: todas las vigentes. Con `p_local_id`: las
+  generales + las de ese local únicamente (para no aplicar el descuento de un local distinto de donde
+  se factura).
 - **API externa `GET /api/campanias`** (Bearer admin) — identifica al cliente por `numero` (tarjeta) o
   `dni`, y opcionalmente `local`/`local_id`; pensada para que el **sistema de facturación** consulte los
   descuentos vigentes de un cliente al emitir una factura.
@@ -232,5 +235,6 @@ migration_campanias.sql          # grupos de clientes, locales comerciales y cam
 migration_campanias_sin_vencimiento.sql # quita fecha_hasta de campanias; ya no vencen por fecha
 migration_saldos_general_pendiente.sql  # fix: saldos_cliente reparte lo pendiente de premios Generales por comercio
 migration_saldos_general_pendiente_v2.sql # reescribe saldos_cliente en SQL puro (sin loops) + crear_solicitud la reutiliza
+migration_campanias_hasta_minimo.sql    # vuelve a agregar fecha_hasta + puntos_minimos en campanias
 ```
 > Nota: `schema.sql` ya refleja el estado final; las migraciones son para bases creadas antes de cada cambio.

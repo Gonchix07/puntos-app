@@ -1,6 +1,12 @@
 import { useOutletContext } from 'react-router-dom'
 import { Card } from '../../components/ui'
 
+function formatFecha(iso) {
+  if (!iso) return null
+  const [y, m, d] = iso.split('-')
+  return `${d}/${m}/${y}`
+}
+
 export default function PortalBeneficios() {
   const { datos } = useOutletContext()
 
@@ -38,6 +44,7 @@ export default function PortalBeneficios() {
                   <span className="inline-flex items-center gap-1 bg-white/15 px-2 py-1 rounded-full font-medium">
                     {c.local ? `🏬 ${c.local}` : '🌐 Todos los locales'}
                   </span>
+                  {c.fecha_hasta && <span>Válido hasta {formatFecha(c.fecha_hasta)}</span>}
                 </div>
               </div>
             </Card>

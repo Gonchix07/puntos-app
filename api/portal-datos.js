@@ -53,6 +53,7 @@ export default async function handler(req, res) {
       descuento_porcentaje: Number(c.descuento_porcentaje),
       local: c.local_id ? c.local_nombre : null, // null = General (todos los locales)
       fecha_desde: c.fecha_desde,
+      fecha_hasta: c.fecha_hasta,
     }))
 
     return res.status(200).json({

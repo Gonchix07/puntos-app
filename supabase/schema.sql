@@ -1100,12 +1100,15 @@ create table if not exists public.campanias (
   descripcion text,
   descuento_porcentaje numeric(5,2) not null check (descuento_porcentaje > 0 and descuento_porcentaje <= 100),
   local_id uuid references public.locales(id) on delete set null,  -- null = general (todos los locales)
-  fecha_desde date not null,                                        -- permite programar a futuro; sin vencimiento por fecha
+  fecha_desde date not null,                                        -- permite programar a futuro
+  fecha_hasta date,                                                 -- null = sin vencimiento
+  puntos_minimos numeric(14,2) not null default 0 check (puntos_minimos >= 0), -- mínimo de puntos ACUMULADOS para participar
   activa boolean not null default true,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  constraint campanias_vigencia_valida check (fecha_hasta is null or fecha_hasta >= fecha_desde)
 );
 create index if not exists idx_campanias_local on public.campanias(local_id);
-create index if not exists idx_campanias_vigencia on public.campanias(fecha_desde);
+create index if not exists idx_campanias_vigencia on public.campanias(fecha_desde, fecha_hasta);
 
 -- Destinatarios: clientes individuales y grupos (se pueden combinar)
 create table if not exists public.campania_clientes (
@@ -1127,11 +1130,11 @@ create index if not exists idx_campania_grupos_grupo on public.campania_grupos(g
 --  por local (usada por la API externa de facturación)
 --  - Sin p_local_id: devuelve TODAS las vigentes del cliente.
 --  - Con p_local_id: devuelve las generales + las de ESE local.
---  - Sin vencimiento por fecha: una campaña queda vigente desde
---    fecha_desde hasta que se desactiva manualmente (activa = false).
---    Puede haber múltiples campañas superpuestas para distintos
---    clientes/grupos sin ninguna restricción entre ellas.
+--  - Vigencia: fecha_desde <= hoy <= fecha_hasta (o sin fecha_hasta).
+--  - Elegibilidad: además de estar asignada (individual o por grupo),
+--    el cliente debe tener acumulados >= puntos_minimos de la campaña.
 -- ============================================================
+drop function if exists public.campanias_vigentes_cliente(uuid, uuid);
 create or replace function public.campanias_vigentes_cliente(
   p_cliente_id uuid,
   p_local_id uuid default null
@@ -1143,18 +1146,23 @@ returns table(
   descuento_porcentaje numeric,
   local_id uuid,
   local_nombre text,
-  fecha_desde date
+  fecha_desde date,
+  fecha_hasta date,
+  puntos_minimos numeric
 )
 language sql
 security definer set search_path = public
 as $$
   select distinct c.id, c.nombre, c.descripcion, c.descuento_porcentaje,
-         c.local_id, l.nombre, c.fecha_desde
+         c.local_id, l.nombre, c.fecha_desde, c.fecha_hasta, c.puntos_minimos
   from public.campanias c
   left join public.locales l on l.id = c.local_id
+  left join public.tarjetas t on t.cliente_id = p_cliente_id
   where c.activa = true
     and c.fecha_desde <= current_date
+    and (c.fecha_hasta is null or c.fecha_hasta >= current_date)
     and (p_local_id is null or c.local_id is null or c.local_id = p_local_id)
+    and coalesce(t.puntos, 0) >= c.puntos_minimos
     and (
       exists (
         select 1 from public.campania_clientes cc
