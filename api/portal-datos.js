@@ -43,7 +43,11 @@ export default async function handler(req, res) {
         .eq('cliente_id', cliente.id)
         .order('created_at', { ascending: false }),
       admin.from('comercios').select('id, nombre, logo_url').order('nombre'),
-      admin.rpc('campanias_vigentes_cliente', { p_cliente_id: cliente.id }),
+      // Informativa: trae TODAS las campañas asignadas al cliente, incluidas
+      // las que hoy no se pueden usar (día/periodicidad), para mostrarlas
+      // igual pero deshabilitadas. Distinta de campanias_vigentes_cliente,
+      // que usa el sistema de facturación y sigue siendo estricta.
+      admin.rpc('campanias_cliente_portal', { p_cliente_id: cliente.id }),
     ])
 
     const campanias = (campaniasQ.data || []).map((c) => ({
@@ -56,6 +60,9 @@ export default async function handler(req, res) {
       fecha_hasta: c.fecha_hasta,
       dias_semana: c.dias_semana,
       periodicidad: c.periodicidad,
+      dia_habilitado: c.dia_habilitado,
+      periodicidad_disponible: c.periodicidad_disponible,
+      disponible: c.dia_habilitado && c.periodicidad_disponible,
     }))
 
     return res.status(200).json({

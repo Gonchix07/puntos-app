@@ -155,21 +155,31 @@ grupos completos, con vigencia y alcance opcional a un único **local comercial*
 - **`campania_usos`**: registro de cada vez que el sistema de facturación aplicó el descuento de una
   campaña (campania_id, cliente_id, local_id, usuario_email, usado_en). Es lo que permite que la
   periodicidad se cumpla de verdad — sin este registro, "1 vez por día" sería solo una etiqueta.
-- **`campanias_vigentes_cliente(p_cliente_id, p_local_id?)`** (RPC) — devuelve las campañas activas,
-  vigentes hoy (entre `fecha_desde` y `fecha_hasta`), con hoy en `dias_semana`, con `puntos_minimos`
-  cumplido, **sin un uso registrado en `campania_usos` dentro del período de su `periodicidad`**, y
-  aplicables al cliente (individual o vía su grupo). Sin `p_local_id`: todas las vigentes. Con
-  `p_local_id`: las generales + las de ese local únicamente (para no aplicar el descuento de un local
-  distinto de donde se factura). Es la única fuente de verdad — la usan tanto la API externa como el
-  portal, y también `registrar_uso_campania` para revalidar antes de loguear un uso.
+- **`campanias_vigentes_cliente(p_cliente_id, p_local_id?)`** (RPC, **estricta**) — devuelve solo las
+  campañas usables AHORA MISMO: activas, vigentes hoy (entre `fecha_desde` y `fecha_hasta`), con hoy en
+  `dias_semana`, con `puntos_minimos` cumplido, **sin un uso registrado en `campania_usos` dentro del
+  período de su `periodicidad`**, y aplicables al cliente (individual o vía su grupo). Sin `p_local_id`:
+  todas las vigentes. Con `p_local_id`: las generales + las de ese local únicamente. La usan el **sistema
+  de facturación/POS** (`GET /api/campanias`) y `registrar_uso_campania` para revalidar antes de loguear
+  un uso. **No se toca** para el caso de uso del portal (ver siguiente punto).
+- **`campanias_cliente_portal(p_cliente_id)`** (RPC, **informativa**, distinta de la anterior) — devuelve
+  TODAS las campañas asignadas al cliente que están dentro de vigencia por fecha y cumplen el mínimo de
+  puntos, **incluidas las que hoy no se pueden usar** (día no habilitado o periodicidad ya consumida),
+  con dos flags calculados: `dia_habilitado` y `periodicidad_disponible`. La usa exclusivamente
+  `GET /api/portal-datos`, para que el Portal muestre esas campañas igual, deshabilitadas, con el motivo.
 - **`registrar_uso_campania(p_campania_id, p_cliente_id, p_local_id?, p_usuario_email?)`** (RPC) —
-  vuelve a validar toda la elegibilidad (evita una condición de carrera) y, si sigue siendo válida,
-  inserta en `campania_usos`. La llama el sistema de facturación después de aplicar el descuento.
+  vuelve a validar toda la elegibilidad vía `campanias_vigentes_cliente` (evita una condición de carrera)
+  y, si sigue siendo válida, inserta en `campania_usos`. La llama el sistema de facturación después de
+  aplicar el descuento.
 - **API externa `/api/campanias`** (Bearer admin o `X-Api-Key`) — **GET**: identifica al cliente por
-  `numero` (tarjeta) o `dni`, y opcionalmente `local`/`local_id`; devuelve las campañas vigentes
-  (incluye `dias_semana` y `periodicidad`). **POST**: `{ campania_id, numero|dni, local|local_id? }` —
-  registra el uso (llama a `registrar_uso_campania`); el sistema de facturación debe llamarlo después
-  de aplicar cada descuento para que la periodicidad se respete.
+  `numero` (tarjeta) o `dni`, y opcionalmente `local`/`local_id`; devuelve las campañas vigentes AHORA
+  (vía `campanias_vigentes_cliente`; incluye `dias_semana` y `periodicidad`). **POST**:
+  `{ campania_id, numero|dni, local|local_id? }` — registra el uso (llama a `registrar_uso_campania`);
+  el sistema de facturación debe llamarlo después de aplicar cada descuento para que la periodicidad se
+  respete.
+- **Portal → Beneficios**: usa `campanias_cliente_portal` (vía `/api/portal-datos`), no la de arriba —
+  muestra TODAS las campañas del cliente, con las no usables hoy en gris y un rótulo del motivo ("No
+  disponible hoy" / "Ya lo usaste hoy·esta semana·este mes").
 
 ---
 
@@ -251,5 +261,6 @@ migration_saldos_general_pendiente.sql  # fix: saldos_cliente reparte lo pendien
 migration_saldos_general_pendiente_v2.sql # reescribe saldos_cliente en SQL puro (sin loops) + crear_solicitud la reutiliza
 migration_campanias_hasta_minimo.sql    # vuelve a agregar fecha_hasta + puntos_minimos en campanias
 migration_campanias_dias_periodicidad.sql # dias_semana + periodicidad + campania_usos + registrar_uso_campania
+migration_campanias_portal_informativo.sql # campanias_cliente_portal: RPC informativa aparte, solo para el Portal
 ```
 > Nota: `schema.sql` ya refleja el estado final; las migraciones son para bases creadas antes de cada cambio.
