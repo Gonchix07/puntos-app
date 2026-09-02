@@ -20,6 +20,17 @@ export default function Usuarios() {
       .order('created_at', { ascending: false })
     setUsuarios(data || [])
     setLoading(false)
+
+    // El último login vive en auth.users, solo accesible vía el backend
+    // serverless (Auth Admin API). Si no está disponible (ej. `npm run dev`
+    // sin `vercel dev`), se omite en silencio y queda "—" en la columna.
+    try {
+      const conLogin = await llamarApi('GET')
+      const porId = new Map(conLogin.map((u) => [u.id, u.last_sign_in_at]))
+      setUsuarios((prev) => prev.map((u) => ({ ...u, last_sign_in_at: porId.get(u.id) ?? null })))
+    } catch {
+      // sin backend disponible: no se muestra el último login, sin romper el listado
+    }
   }
 
   useEffect(() => {
@@ -177,6 +188,7 @@ export default function Usuarios() {
                   <th className="py-2 pr-3">Email</th>
                   <th className="py-2 pr-3">Rol</th>
                   <th className="py-2 pr-3">Creado</th>
+                  <th className="py-2 pr-3">Último login</th>
                   <th className="py-2 pr-3 text-right">Acciones</th>
                 </tr>
               </thead>
@@ -193,6 +205,13 @@ export default function Usuarios() {
                     </td>
                     <td className="py-2 pr-3 text-slate-500" data-label="Creado">
                       {new Date(u.created_at).toLocaleDateString('es-AR')}
+                    </td>
+                    <td className="py-2 pr-3 text-slate-500 whitespace-nowrap" data-label="Último login">
+                      {u.last_sign_in_at === undefined
+                        ? '—'
+                        : u.last_sign_in_at
+                        ? new Date(u.last_sign_in_at).toLocaleString('es-AR')
+                        : 'Nunca'}
                     </td>
                     <td className="py-2 pr-3" data-label="Acciones">
                       <div className="flex gap-2 justify-end">

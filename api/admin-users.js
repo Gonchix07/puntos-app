@@ -1,4 +1,5 @@
 // ABM de usuarios (Supabase Auth) con service_role.
+//   GET    -> lista [{ id, email, role, created_at, last_sign_in_at }]
 //   POST   -> crear   { email, password, role }
 //   PATCH  -> modificar { userId, email?, password?, role }
 //   DELETE -> eliminar { userId }
@@ -31,6 +32,30 @@ export default async function handler(req, res) {
   if (!admin) return res.status(403).json({ error: 'No autorizado (se requiere un usuario administrador).' })
 
   try {
+    if (req.method === 'GET') {
+      const { data: profs, error: profErr } = await admin
+        .from('profiles')
+        .select('id, email, role, created_at')
+        .order('created_at', { ascending: false })
+      if (profErr) return res.status(400).json({ error: profErr.message })
+
+      // last_sign_in_at vive en auth.users, solo accesible vía Auth Admin API.
+      // Se pagina por si hubiera muchos usuarios (tope de seguridad: 20 páginas).
+      const ultimoLoginPorId = new Map()
+      for (let page = 1; page <= 20; page++) {
+        const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 200 })
+        if (error) break
+        for (const u of data?.users || []) ultimoLoginPorId.set(u.id, u.last_sign_in_at)
+        if (!data?.users || data.users.length < 200) break
+      }
+
+      const usuarios = (profs || []).map((p) => ({
+        ...p,
+        last_sign_in_at: ultimoLoginPorId.has(p.id) ? ultimoLoginPorId.get(p.id) : null,
+      }))
+      return res.status(200).json(usuarios)
+    }
+
     if (req.method === 'POST') {
       const { email, password, role } = req.body || {}
       if (!email || !password) return res.status(400).json({ error: 'Email y contraseña son obligatorios.' })
