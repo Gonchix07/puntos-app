@@ -18,13 +18,13 @@ const VACIO = {
 }
 
 const DIAS = [
-  { valor: 1, label: 'Lun' },
-  { valor: 2, label: 'Mar' },
-  { valor: 3, label: 'Mié' },
-  { valor: 4, label: 'Jue' },
-  { valor: 5, label: 'Vie' },
-  { valor: 6, label: 'Sáb' },
-  { valor: 0, label: 'Dom' },
+  { valor: 1, label: 'Lun', letra: 'L' },
+  { valor: 2, label: 'Mar', letra: 'M' },
+  { valor: 3, label: 'Mié', letra: 'X' }, // X para no confundir con Martes
+  { valor: 4, label: 'Jue', letra: 'J' },
+  { valor: 5, label: 'Vie', letra: 'V' },
+  { valor: 6, label: 'Sáb', letra: 'S' },
+  { valor: 0, label: 'Dom', letra: 'D' },
 ]
 
 const PERIODICIDADES = [
@@ -42,8 +42,8 @@ function hoyISO() {
 function formatDias(dias) {
   if (!dias || dias.length === 0) return 'Todos'
   return DIAS.filter((d) => dias.includes(d.valor))
-    .map((d) => d.label)
-    .join(', ')
+    .map((d) => d.letra)
+    .join(' ')
 }
 
 // Estado real de la campaña según su vigencia + flag activa.
