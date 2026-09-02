@@ -1,5 +1,4 @@
-// GET /api/campanias — consulta las campañas vigentes de un cliente, para
-// que el sistema de facturación las aplique al emitir la factura.
+// /api/campanias — campañas de % de descuento, para el sistema de facturación.
 //
 // Autenticación (dos modos, igual que /api/cargar-puntos):
 //   - Header X-Api-Key: <API_INTEGRATION_KEY>  → integraciones servidor-a-servidor (el modo
@@ -8,32 +7,44 @@
 //   - Authorization: Bearer <access_token> de un usuario admin → uso interactivo/manual. Expira
 //     (por defecto a la hora), no apto para una integración recurrente.
 //
-// Query params (identificar el cliente por tarjeta O por DNI):
-//   numero      string  número de tarjeta de 16 dígitos (acepta espacios)
-//   dni         string  DNI del cliente (alternativa a numero)
-//   local       string  nombre del local donde se factura (opcional)
-//   local_id    string  UUID del local (alternativa a local)
+// GET — consulta las campañas vigentes de un cliente en este momento.
+//   Query params (identificar el cliente por tarjeta O por DNI):
+//     numero      string  número de tarjeta de 16 dígitos (acepta espacios)
+//     dni         string  DNI del cliente (alternativa a numero)
+//     local       string  nombre del local donde se factura (opcional)
+//     local_id    string  UUID del local (alternativa a local)
+//   Sin local: devuelve TODAS las campañas vigentes del cliente (generales y
+//   restringidas a cualquier local). Con local: devuelve las generales + las
+//   restringidas a ESE local únicamente.
 //
-// Sin local: devuelve TODAS las campañas vigentes del cliente (generales y
-// restringidas a cualquier local). Con local: devuelve las generales + las
-// restringidas a ESE local únicamente (así no se aplica el descuento de un
-// local distinto de donde se está facturando).
+//   Una campaña es vigente entre fecha_desde y fecha_hasta (fecha_hasta null =
+//   sin vencimiento), solo aplica los días de dias_semana (null = todos),
+//   solo si el cliente tiene puntos ACUMULADOS >= puntos_minimos, y deja de
+//   listarse si ya se usó dentro del período de su periodicidad (ilimitado /
+//   diaria / semanal / mensual) — ver POST más abajo.
 //
-// Una campaña es vigente entre fecha_desde y fecha_hasta (fecha_hasta null =
-// sin vencimiento), y solo se devuelve si el cliente tiene puntos ACUMULADOS
-// >= puntos_minimos de esa campaña. Puede haber múltiples campañas
-// superpuestas en el tiempo para distintos clientes/grupos.
+//   Respuesta 200:
+//   {
+//     "cliente": "Juan Pérez", "dni": "30123456", "numero_tarjeta": "...",
+//     "local": "Sucursal Centro" | null,
+//     "campanias": [
+//       { "id", "nombre", "descripcion", "descuento_porcentaje", "local",
+//         "fecha_desde", "fecha_hasta", "puntos_minimos", "dias_semana",
+//         "periodicidad" }
+//     ]
+//   }
+//   "local" en cada campaña es el nombre del local o "General". "dias_semana"
+//   es un array de 0(domingo)-6(sábado) o null si aplica todos los días.
 //
-// Respuesta 200:
-// {
-//   "cliente": "Juan Pérez", "dni": "30123456", "numero_tarjeta": "...",
-//   "local": "Sucursal Centro" | null,
-//   "campanias": [
-//     { "id", "nombre", "descripcion", "descuento_porcentaje", "local",
-//       "fecha_desde", "fecha_hasta", "puntos_minimos" }
-//   ]
-// }
-// "local" en cada campaña es el nombre del local o "General".
+// POST — registra que el sistema de facturación aplicó el descuento de una
+// campaña en una venta (para que la periodicidad se cumpla de verdad).
+//   Body JSON:
+//     campania_id*  string  UUID de la campaña (viene del GET anterior)
+//     numero | dni  string  identifica al cliente (igual que en GET)
+//     local | local_id  string  local donde se facturó (opcional)
+//   Revalida toda la elegibilidad (vigencia, día, mínimo, destinatario y
+//   periodicidad) antes de registrar — si ya no es válida, devuelve 400.
+//   Respuesta 201: { "uso_id", "campania", "usado_en" }
 
 import { createClient } from '@supabase/supabase-js'
 import { timingSafeEqual } from 'crypto'
@@ -69,23 +80,9 @@ async function getAdmin(req) {
   return admin
 }
 
-export default async function handler(req, res) {
-  if (!url || !anonKey || !serviceKey) {
-    return res.status(500).json({ error: 'Falta configurar SUPABASE_SERVICE_ROLE_KEY en el servidor.' })
-  }
-  if (req.method !== 'GET') {
-    return res.status(405).json({ error: 'Método no permitido. Usá GET.' })
-  }
-
-  const admin = await getAdmin(req)
-  if (!admin) {
-    return res.status(403).json({ error: 'No autorizado (se requiere X-Api-Key válida o un usuario administrador).' })
-  }
-
-  const { numero, dni, local, local_id } = req.query || {}
-
-  // Resolver el cliente por número de tarjeta o por DNI
-  let cliente = null
+// Resuelve el cliente por número de tarjeta o por DNI. Devuelve
+// { cliente } o { error, status }.
+async function resolverCliente(admin, { numero, dni }) {
   if (numero) {
     const numeroLimpio = String(numero).replace(/\s/g, '')
     const { data: tar } = await admin
@@ -93,46 +90,38 @@ export default async function handler(req, res) {
       .select('numero, clientes(id, nombre, dni)')
       .eq('numero', numeroLimpio)
       .single()
-    if (!tar?.clientes) return res.status(404).json({ error: 'No se encontró una tarjeta con ese número.' })
-    cliente = { ...tar.clientes, numero_tarjeta: tar.numero }
-  } else if (dni) {
+    if (!tar?.clientes) return { error: 'No se encontró una tarjeta con ese número.', status: 404 }
+    return { cliente: { ...tar.clientes, numero_tarjeta: tar.numero } }
+  }
+  if (dni) {
     const { data: cli } = await admin
       .from('clientes')
       .select('id, nombre, dni')
       .eq('dni', String(dni).trim())
       .single()
-    if (!cli) return res.status(404).json({ error: 'No se encontró un cliente con ese DNI.' })
+    if (!cli) return { error: 'No se encontró un cliente con ese DNI.', status: 404 }
     const { data: tar } = await admin.from('tarjetas').select('numero').eq('cliente_id', cli.id).single()
-    cliente = { ...cli, numero_tarjeta: tar?.numero || null }
-  } else {
-    return res.status(400).json({ error: 'Indicá el número de tarjeta (numero) o el dni del cliente.' })
+    return { cliente: { ...cli, numero_tarjeta: tar?.numero || null } }
   }
+  return { error: 'Indicá el número de tarjeta (numero) o el dni del cliente.', status: 400 }
+}
 
-  // Resolver el local (opcional): por id o por nombre
-  let localId = local_id || null
-  let localNombre = null
-  if (!localId && local?.trim()) {
-    const { data: loc } = await admin
-      .from('locales')
-      .select('id, nombre')
-      .ilike('nombre', local.trim())
-      .single()
-    if (!loc) return res.status(404).json({ error: `Local no encontrado: "${local}".` })
-    localId = loc.id
-    localNombre = loc.nombre
-  } else if (localId) {
-    const { data: loc } = await admin.from('locales').select('nombre').eq('id', localId).single()
-    if (!loc) return res.status(404).json({ error: 'local_id no corresponde a ningún local.' })
-    localNombre = loc.nombre
+// Resuelve el local (opcional) por id o por nombre. Devuelve
+// { localId, localNombre } o { error, status }.
+async function resolverLocal(admin, { local, local_id }) {
+  if (!local_id && !local?.trim()) return { localId: null, localNombre: null }
+  if (local_id) {
+    const { data: loc } = await admin.from('locales').select('nombre').eq('id', local_id).single()
+    if (!loc) return { error: 'local_id no corresponde a ningún local.', status: 404 }
+    return { localId: local_id, localNombre: loc.nombre }
   }
+  const { data: loc } = await admin.from('locales').select('id, nombre').ilike('nombre', local.trim()).single()
+  if (!loc) return { error: `Local no encontrado: "${local}".`, status: 404 }
+  return { localId: loc.id, localNombre: loc.nombre }
+}
 
-  const { data, error } = await admin.rpc('campanias_vigentes_cliente', {
-    p_cliente_id: cliente.id,
-    p_local_id: localId,
-  })
-  if (error) return res.status(400).json({ error: error.message })
-
-  const campanias = (data || []).map((c) => ({
+function mapCampania(c) {
+  return {
     id: c.campania_id,
     nombre: c.nombre,
     descripcion: c.descripcion,
@@ -141,13 +130,72 @@ export default async function handler(req, res) {
     fecha_desde: c.fecha_desde,
     fecha_hasta: c.fecha_hasta,
     puntos_minimos: Number(c.puntos_minimos || 0),
-  }))
+    dias_semana: c.dias_semana,
+    periodicidad: c.periodicidad,
+  }
+}
 
-  return res.status(200).json({
-    cliente: cliente.nombre,
-    dni: cliente.dni,
-    numero_tarjeta: cliente.numero_tarjeta,
-    local: localNombre,
-    campanias,
-  })
+export default async function handler(req, res) {
+  if (!url || !anonKey || !serviceKey) {
+    return res.status(500).json({ error: 'Falta configurar SUPABASE_SERVICE_ROLE_KEY en el servidor.' })
+  }
+
+  const admin = await getAdmin(req)
+  if (!admin) {
+    return res.status(403).json({ error: 'No autorizado (se requiere X-Api-Key válida o un usuario administrador).' })
+  }
+
+  if (req.method === 'GET') {
+    const { numero, dni, local, local_id } = req.query || {}
+
+    const rc = await resolverCliente(admin, { numero, dni })
+    if (rc.error) return res.status(rc.status).json({ error: rc.error })
+    const { cliente } = rc
+
+    const rl = await resolverLocal(admin, { local, local_id })
+    if (rl.error) return res.status(rl.status).json({ error: rl.error })
+    const { localId, localNombre } = rl
+
+    const { data, error } = await admin.rpc('campanias_vigentes_cliente', {
+      p_cliente_id: cliente.id,
+      p_local_id: localId,
+    })
+    if (error) return res.status(400).json({ error: error.message })
+
+    return res.status(200).json({
+      cliente: cliente.nombre,
+      dni: cliente.dni,
+      numero_tarjeta: cliente.numero_tarjeta,
+      local: localNombre,
+      campanias: (data || []).map(mapCampania),
+    })
+  }
+
+  if (req.method === 'POST') {
+    const { campania_id, numero, dni, local, local_id } = req.body || {}
+    if (!campania_id) return res.status(400).json({ error: 'Falta campania_id.' })
+
+    const rc = await resolverCliente(admin, { numero, dni })
+    if (rc.error) return res.status(rc.status).json({ error: rc.error })
+    const { cliente } = rc
+
+    const rl = await resolverLocal(admin, { local, local_id })
+    if (rl.error) return res.status(rl.status).json({ error: rl.error })
+    const { localId } = rl
+
+    const { data, error } = await admin.rpc('registrar_uso_campania', {
+      p_campania_id: campania_id,
+      p_cliente_id: cliente.id,
+      p_local_id: localId,
+      p_usuario_email: 'api-integracion',
+    })
+    if (error) {
+      const notFound = /no encontrada/i.test(error.message)
+      return res.status(notFound ? 404 : 400).json({ error: error.message })
+    }
+
+    return res.status(201).json(data)
+  }
+
+  return res.status(405).json({ error: 'Método no permitido. Usá GET o POST.' })
 }

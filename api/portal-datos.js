@@ -54,6 +54,8 @@ export default async function handler(req, res) {
       local: c.local_id ? c.local_nombre : null, // null = General (todos los locales)
       fecha_desde: c.fecha_desde,
       fecha_hasta: c.fecha_hasta,
+      dias_semana: c.dias_semana,
+      periodicidad: c.periodicidad,
     }))
 
     return res.status(200).json({

@@ -142,21 +142,34 @@ grupos completos, con vigencia y alcance opcional a un único **local comercial*
   (bucket Storage `locales`), dirección y activo. Se gestionan en Configuración → Locales.
 - **`campanias`**: nombre, descripción, `descuento_porcentaje` (0–100), `local_id` (null = **General**,
   aplica a todos los locales; con valor = restringida a ESE local), `fecha_desde` (permite programar
-  a futuro), **`fecha_hasta`** (opcional; null = sin vencimiento por fecha), **`puntos_minimos`**
+  a futuro), `fecha_hasta` (opcional; null = sin vencimiento por fecha), `puntos_minimos`
   (default 0; el cliente debe tener puntos **acumulados totales** ≥ este valor para que la campaña le
-  aplique — se compara contra `tarjetas.puntos`, no el remanente), `activa` (baja manual, independiente
-  de la vigencia por fecha). Pueden existir múltiples campañas superpuestas en el tiempo para distintos
-  clientes/grupos sin ninguna restricción entre ellas.
+  aplique — se compara contra `tarjetas.puntos`, no el remanente), **`dias_semana`** (`int[]`, 0=domingo…
+  6=sábado, igual que `extract(dow)` y `Date.getDay()`; null/vacío = todos los días), **`periodicidad`**
+  (`'ilimitado'|'diaria'|'semanal'|'mensual'` — cuántas veces puede usarla un mismo cliente en el
+  período vigente), `activa` (baja manual, independiente de la vigencia por fecha). Pueden existir
+  múltiples campañas superpuestas en el tiempo para distintos clientes/grupos sin ninguna restricción
+  entre ellas.
 - **Destinatarios combinables**: `campania_clientes` (individuales) y `campania_grupos` (grupos
   completos) — una campaña puede tener clientes sueltos Y grupos a la vez; se otorga a la unión de ambos.
+- **`campania_usos`**: registro de cada vez que el sistema de facturación aplicó el descuento de una
+  campaña (campania_id, cliente_id, local_id, usuario_email, usado_en). Es lo que permite que la
+  periodicidad se cumpla de verdad — sin este registro, "1 vez por día" sería solo una etiqueta.
 - **`campanias_vigentes_cliente(p_cliente_id, p_local_id?)`** (RPC) — devuelve las campañas activas,
-  vigentes hoy (entre `fecha_desde` y `fecha_hasta`), con `puntos_minimos` cumplido, y aplicables al
-  cliente (individual o vía su grupo). Sin `p_local_id`: todas las vigentes. Con `p_local_id`: las
-  generales + las de ese local únicamente (para no aplicar el descuento de un local distinto de donde
-  se factura).
-- **API externa `GET /api/campanias`** (Bearer admin) — identifica al cliente por `numero` (tarjeta) o
-  `dni`, y opcionalmente `local`/`local_id`; pensada para que el **sistema de facturación** consulte los
-  descuentos vigentes de un cliente al emitir una factura.
+  vigentes hoy (entre `fecha_desde` y `fecha_hasta`), con hoy en `dias_semana`, con `puntos_minimos`
+  cumplido, **sin un uso registrado en `campania_usos` dentro del período de su `periodicidad`**, y
+  aplicables al cliente (individual o vía su grupo). Sin `p_local_id`: todas las vigentes. Con
+  `p_local_id`: las generales + las de ese local únicamente (para no aplicar el descuento de un local
+  distinto de donde se factura). Es la única fuente de verdad — la usan tanto la API externa como el
+  portal, y también `registrar_uso_campania` para revalidar antes de loguear un uso.
+- **`registrar_uso_campania(p_campania_id, p_cliente_id, p_local_id?, p_usuario_email?)`** (RPC) —
+  vuelve a validar toda la elegibilidad (evita una condición de carrera) y, si sigue siendo válida,
+  inserta en `campania_usos`. La llama el sistema de facturación después de aplicar el descuento.
+- **API externa `/api/campanias`** (Bearer admin o `X-Api-Key`) — **GET**: identifica al cliente por
+  `numero` (tarjeta) o `dni`, y opcionalmente `local`/`local_id`; devuelve las campañas vigentes
+  (incluye `dias_semana` y `periodicidad`). **POST**: `{ campania_id, numero|dni, local|local_id? }` —
+  registra el uso (llama a `registrar_uso_campania`); el sistema de facturación debe llamarlo después
+  de aplicar cada descuento para que la periodicidad se respete.
 
 ---
 
@@ -184,7 +197,8 @@ Requieren `SUPABASE_SERVICE_ROLE_KEY` en el servidor y uno de estos dos modos de
 **POST /api/cargar-puntos** y **GET /api/campanias** aceptan los dos modos (`getAdmin` prueba primero `X-Api-Key`, si no coincide cae al Bearer). El resto de los endpoints (`clientes`, `admin-users`) todavía exigen Bearer admin.
 - **POST /api/clientes** — crea cliente (y tarjeta). Body: `nombre*`, `dni*`, `email`, `telefono`.
 - **POST /api/cargar-puntos** — carga puntos. Body: `factura_pesos*`, `comercio*` (nombre) o `comercio_id`, `factura_numero`, y (`numero` | `dni`). `origen = 'api'` (o el que mande el caller).
-- **GET /api/campanias** — campañas vigentes de un cliente (para el sistema de facturación). Query: (`numero` | `dni`) y opcional (`local` | `local_id`). Devuelve `{ cliente, dni, numero_tarjeta, local, campanias: [{ id, nombre, descripcion, descuento_porcentaje, local, fecha_desde }] }`.
+- **GET /api/campanias** — campañas vigentes de un cliente (para el sistema de facturación). Query: (`numero` | `dni`) y opcional (`local` | `local_id`). Devuelve `{ cliente, dni, numero_tarjeta, local, campanias: [{ id, nombre, descripcion, descuento_porcentaje, local, fecha_desde, fecha_hasta, puntos_minimos, dias_semana, periodicidad }] }`.
+- **POST /api/campanias** — registra que se aplicó el descuento de una campaña en una venta. Body: `{ campania_id*, numero|dni, local|local_id? }`. Revalida toda la elegibilidad antes de registrar.
 - **POST/PATCH/DELETE /api/admin-users** — ABM de usuarios de Auth.
 
 #### Bearer token desde un sistema externo (uso manual, no recomendado para integraciones)
@@ -236,5 +250,6 @@ migration_campanias_sin_vencimiento.sql # quita fecha_hasta de campanias; ya no 
 migration_saldos_general_pendiente.sql  # fix: saldos_cliente reparte lo pendiente de premios Generales por comercio
 migration_saldos_general_pendiente_v2.sql # reescribe saldos_cliente en SQL puro (sin loops) + crear_solicitud la reutiliza
 migration_campanias_hasta_minimo.sql    # vuelve a agregar fecha_hasta + puntos_minimos en campanias
+migration_campanias_dias_periodicidad.sql # dias_semana + periodicidad + campania_usos + registrar_uso_campania
 ```
 > Nota: `schema.sql` ya refleja el estado final; las migraciones son para bases creadas antes de cada cambio.

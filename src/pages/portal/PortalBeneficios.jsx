@@ -7,6 +7,18 @@ function formatFecha(iso) {
   return `${d}/${m}/${y}`
 }
 
+const DIAS_LABEL = { 0: 'Dom', 1: 'Lun', 2: 'Mar', 3: 'Mié', 4: 'Jue', 5: 'Vie', 6: 'Sáb' }
+const PERIODICIDAD_LABEL = {
+  diaria: '1 vez por día',
+  semanal: '1 vez por semana',
+  mensual: '1 vez por mes',
+}
+
+function formatDias(dias) {
+  if (!dias || dias.length === 0) return null
+  return [...dias].sort().map((d) => DIAS_LABEL[d]).join(', ')
+}
+
 export default function PortalBeneficios() {
   const { datos } = useOutletContext()
 
@@ -45,6 +57,10 @@ export default function PortalBeneficios() {
                     {c.local ? `🏬 ${c.local}` : '🌐 Todos los locales'}
                   </span>
                   {c.fecha_hasta && <span>Válido hasta {formatFecha(c.fecha_hasta)}</span>}
+                  {formatDias(c.dias_semana) && <span>· {formatDias(c.dias_semana)}</span>}
+                  {c.periodicidad && c.periodicidad !== 'ilimitado' && (
+                    <span>· {PERIODICIDAD_LABEL[c.periodicidad] || c.periodicidad}</span>
+                  )}
                 </div>
               </div>
             </Card>

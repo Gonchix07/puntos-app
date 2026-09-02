@@ -12,11 +12,38 @@ const VACIO = {
   fecha_desde: '',
   fecha_hasta: '',
   puntos_minimos: '',
+  dias_semana: [], // vacío = todos los días
+  periodicidad: 'ilimitado',
   activa: true,
 }
 
+const DIAS = [
+  { valor: 1, label: 'Lun' },
+  { valor: 2, label: 'Mar' },
+  { valor: 3, label: 'Mié' },
+  { valor: 4, label: 'Jue' },
+  { valor: 5, label: 'Vie' },
+  { valor: 6, label: 'Sáb' },
+  { valor: 0, label: 'Dom' },
+]
+
+const PERIODICIDADES = [
+  { valor: 'ilimitado', label: 'Ilimitado' },
+  { valor: 'diaria', label: '1 vez por día' },
+  { valor: 'semanal', label: '1 vez por semana' },
+  { valor: 'mensual', label: '1 vez por mes' },
+]
+const PERIODICIDAD_LABEL = Object.fromEntries(PERIODICIDADES.map((p) => [p.valor, p.label]))
+
 function hoyISO() {
   return new Date().toISOString().slice(0, 10)
+}
+
+function formatDias(dias) {
+  if (!dias || dias.length === 0) return 'Todos'
+  return DIAS.filter((d) => dias.includes(d.valor))
+    .map((d) => d.label)
+    .join(', ')
 }
 
 // Estado real de la campaña según su vigencia + flag activa.
@@ -103,6 +130,8 @@ export default function Campanias() {
       fecha_desde: c.fecha_desde,
       fecha_hasta: c.fecha_hasta || '',
       puntos_minimos: c.puntos_minimos ? String(c.puntos_minimos) : '',
+      dias_semana: c.dias_semana || [],
+      periodicidad: c.periodicidad || 'ilimitado',
       activa: c.activa,
     })
     setClientesSel(relClientes.filter((r) => r.campania_id === c.id).map((r) => r.cliente_id))
@@ -158,6 +187,8 @@ export default function Campanias() {
       fecha_desde: form.fecha_desde,
       fecha_hasta: form.fecha_hasta || null,
       puntos_minimos: minimo,
+      dias_semana: form.dias_semana.length > 0 ? form.dias_semana : null,
+      periodicidad: form.periodicidad,
       activa: form.activa,
     }
 
@@ -224,8 +255,9 @@ export default function Campanias() {
       <h1 className="text-2xl font-bold text-slate-800">Campañas</h1>
       <p className="text-sm text-slate-500 -mt-2">
         Ofertas de % de descuento asignadas a clientes individuales y/o grupos, generales o restringidas a un
-        local, con vigencia por fecha y un mínimo opcional de puntos acumulados para participar. El sistema
-        de facturación las consulta por tarjeta o DNI vía API.
+        local, con vigencia por fecha, días habilitados, periodicidad de uso y un mínimo opcional de puntos
+        acumulados para participar. El sistema de facturación las consulta por tarjeta o DNI vía API, y avisa
+        cuando aplicó el descuento para que la periodicidad se cumpla.
       </p>
 
       {msg && (
@@ -289,6 +321,59 @@ export default function Campanias() {
               remanente disponible). Pueden existir múltiples campañas superpuestas para distintos clientes o
               grupos.
             </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <span className="block text-sm font-medium text-slate-600 mb-1">
+                  Días habilitados (opcional)
+                </span>
+                <div className="flex flex-wrap gap-2">
+                  {DIAS.map((d) => {
+                    const marcado = form.dias_semana.includes(d.valor)
+                    return (
+                      <label
+                        key={d.valor}
+                        className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border cursor-pointer select-none ${
+                          marcado
+                            ? 'bg-indigo-600 border-indigo-600 text-white'
+                            : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          className="hidden"
+                          checked={marcado}
+                          onChange={(e) =>
+                            setForm((f) => ({
+                              ...f,
+                              dias_semana: e.target.checked
+                                ? [...f.dias_semana, d.valor]
+                                : f.dias_semana.filter((v) => v !== d.valor),
+                            }))
+                          }
+                        />
+                        {d.label}
+                      </label>
+                    )
+                  })}
+                </div>
+                <p className="text-xs text-slate-400 mt-1">
+                  Sin ninguno marcado, aplica todos los días.
+                </p>
+              </div>
+
+              <Select
+                label="Periodicidad de uso por cliente"
+                value={form.periodicidad}
+                onChange={(e) => setForm((f) => ({ ...f, periodicidad: e.target.value }))}
+              >
+                {PERIODICIDADES.map((p) => (
+                  <option key={p.valor} value={p.valor}>
+                    {p.label}
+                  </option>
+                ))}
+              </Select>
+            </div>
 
             <label className="block">
               <span className="block text-sm font-medium text-slate-600 mb-1">Descripción (opcional)</span>
@@ -422,6 +507,8 @@ export default function Campanias() {
                   <th className="py-2 pr-3 text-right">Descuento</th>
                   <th className="py-2 pr-3">Local</th>
                   <th className="py-2 pr-3">Vigencia</th>
+                  <th className="py-2 pr-3">Días</th>
+                  <th className="py-2 pr-3">Periodicidad</th>
                   <th className="py-2 pr-3 text-right">Mín. puntos</th>
                   <th className="py-2 pr-3">Destinatarios</th>
                   <th className="py-2 pr-3">Estado</th>
@@ -446,6 +533,12 @@ export default function Campanias() {
                       </td>
                       <td className="py-2 pr-3 whitespace-nowrap text-slate-500" data-label="Vigencia">
                         {c.fecha_desde} → {c.fecha_hasta || 'sin vencimiento'}
+                      </td>
+                      <td className="py-2 pr-3 text-slate-500" data-label="Días">
+                        {formatDias(c.dias_semana)}
+                      </td>
+                      <td className="py-2 pr-3 text-slate-500" data-label="Periodicidad">
+                        {PERIODICIDAD_LABEL[c.periodicidad] || c.periodicidad}
                       </td>
                       <td className="py-2 pr-3 text-right text-slate-500" data-label="Mín. puntos">
                         {Number(c.puntos_minimos) > 0 ? c.puntos_minimos : '—'}
