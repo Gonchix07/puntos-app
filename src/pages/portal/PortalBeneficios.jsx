@@ -46,7 +46,8 @@ export default function PortalBeneficios() {
       <div>
         <h1 className="text-2xl font-bold text-slate-800">Beneficios</h1>
         <p className="text-sm text-slate-500">
-          Descuentos asignados a tu cuenta. Los que no se pueden usar hoy quedan igual visibles, en gris.
+          Descuentos asignados a tu cuenta. Los que no se pueden usar hoy quedan igual visibles, en tonos
+          más claros.
         </p>
       </div>
 
@@ -61,15 +62,15 @@ export default function PortalBeneficios() {
             return (
               <Card
                 key={c.id}
-                className={`relative flex flex-col p-0 overflow-hidden min-h-[200px] border-0 ${
+                className={`relative flex flex-col p-0 overflow-hidden min-h-[200px] ${
                   c.disponible
-                    ? 'bg-gradient-to-br from-violet-950 via-purple-800 to-fuchsia-700'
-                    : 'bg-slate-400 grayscale'
+                    ? 'border-0 bg-gradient-to-br from-violet-950 via-purple-800 to-fuchsia-700'
+                    : 'border border-purple-200 bg-gradient-to-br from-violet-50 via-purple-50 to-fuchsia-50'
                 }`}
               >
-                <div className="relative p-5 flex flex-col gap-3 text-white h-full">
+                <div className={`relative p-5 flex flex-col gap-3 h-full ${c.disponible ? 'text-white' : 'text-slate-700'}`}>
                   {motivo && (
-                    <span className="absolute top-3 right-3 bg-black/40 text-white text-[11px] font-semibold px-2 py-0.5 rounded-full">
+                    <span className="absolute top-3 right-3 bg-slate-700/90 text-white text-[11px] font-semibold px-2 py-0.5 rounded-full">
                       {motivo}
                     </span>
                   )}
@@ -77,15 +78,27 @@ export default function PortalBeneficios() {
                     <h3 className="font-bold text-lg leading-tight">{c.nombre}</h3>
                     <span
                       className={`shrink-0 font-extrabold text-xl leading-none rounded-full h-14 w-14 grid place-items-center shadow-lg ${
-                        c.disponible ? 'bg-white text-fuchsia-700' : 'bg-white/80 text-slate-500'
+                        c.disponible ? 'bg-white text-fuchsia-700' : 'bg-white text-purple-400'
                       }`}
                     >
                       {c.descuento_porcentaje}%
                     </span>
                   </div>
-                  {c.descripcion && <p className="text-sm text-white/85">{c.descripcion}</p>}
-                  <div className="mt-auto flex flex-wrap items-center gap-2 pt-2 border-t border-white/15 text-xs text-white/80">
-                    <span className="inline-flex items-center gap-1 bg-white/15 px-2 py-1 rounded-full font-medium">
+                  {c.descripcion && (
+                    <p className={`text-sm ${c.disponible ? 'text-white/85' : 'text-slate-500'}`}>
+                      {c.descripcion}
+                    </p>
+                  )}
+                  <div
+                    className={`mt-auto flex flex-wrap items-center gap-2 pt-2 border-t text-xs ${
+                      c.disponible ? 'border-white/15 text-white/80' : 'border-purple-200 text-slate-500'
+                    }`}
+                  >
+                    <span
+                      className={`inline-flex items-center gap-1 px-2 py-1 rounded-full font-medium ${
+                        c.disponible ? 'bg-white/15' : 'bg-white text-slate-600'
+                      }`}
+                    >
                       {c.local ? `🏬 ${c.local}` : '🌐 Todos los locales'}
                     </span>
                     {c.fecha_hasta && <span>Válido hasta {formatFecha(c.fecha_hasta)}</span>}
