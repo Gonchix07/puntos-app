@@ -113,9 +113,6 @@ export default function PortalLayout() {
           <Icono nombre="salir" /> Cerrar sesión
         </button>
       </nav>
-      <div className="px-5 py-4 text-xs text-slate-500 border-t border-white/10">
-        Programa de Puntos · Portal de clientes
-      </div>
     </aside>
   )
 
